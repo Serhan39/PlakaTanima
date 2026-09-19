@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.env
+*.db
+*.sqlite3
+venv/
+.venv/
+models/*.onnx
+snapshots/
+.DS_Store
+node_modules/

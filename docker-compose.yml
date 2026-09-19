@@ -1,0 +1,20 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+    restart: unless-stopped
+
+  worker:
+    build: .
+    command: ["python", "-m", "app.camera_worker"]
+    env_file: .env
+    environment:
+      API_BASE_URL: "http://api:8000"
+    depends_on:
+      - api
+    restart: unless-stopped

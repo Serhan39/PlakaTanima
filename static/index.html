@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sertek ALPR - Kontrol Paneli</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Sertek <span>ALPR</span></div>
+    <nav>
+      <button class="tab-btn active" data-tab="live">Canli Tespitler</button>
+      <button class="tab-btn" data-tab="watchlist">Izleme Listesi</button>
+      <button class="tab-btn" data-tab="cameras">Kameralar</button>
+      <button class="tab-btn" data-tab="logs">Kayitlar</button>
+    </nav>
+    <button id="logout-btn" class="ghost-btn">Cikis</button>
+  </header>
+
+  <main>
+    <section id="tab-live" class="tab-panel active">
+      <h2>Canli Tespitler</h2>
+      <div id="live-status" class="status-pill">Baglaniyor...</div>
+      <div id="live-feed" class="detection-list"></div>
+    </section>
+
+    <section id="tab-watchlist" class="tab-panel">
+      <h2>Izleme Listesi</h2>
+      <form id="watchlist-form" class="inline-form">
+        <input type="text" id="wl-plate" placeholder="34 ABC 123" required>
+        <select id="wl-category">
+          <option value="allowed">Izinli</option>
+          <option value="staff">Personel</option>
+          <option value="wanted">Aranan</option>
+          <option value="blacklist">Kara Liste</option>
+        </select>
+        <input type="text" id="wl-note" placeholder="Not (opsiyonel)">
+        <button type="submit">Ekle</button>
+      </form>
+      <table class="data-table" id="watchlist-table">
+        <thead><tr><th>Plaka</th><th>Kategori</th><th>Not</th><th>Eklenme</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section id="tab-cameras" class="tab-panel">
+      <h2>Kameralar</h2>
+      <form id="camera-form" class="inline-form">
+        <input type="text" id="cam-name" placeholder="Kamera adi (Ana Giris)" required>
+        <input type="text" id="cam-location" placeholder="Konum">
+        <input type="text" id="cam-rtsp" placeholder="rtsp://..." required>
+        <button type="submit">Ekle</button>
+      </form>
+      <table class="data-table" id="camera-table">
+        <thead><tr><th>Ad</th><th>Konum</th><th>RTSP</th><th>Durum</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section id="tab-logs" class="tab-panel">
+      <h2>Tespit Kayitlari</h2>
+      <table class="data-table" id="logs-table">
+        <thead><tr><th>Plaka</th><th>Guven</th><th>Eslesme</th><th>Kamera</th><th>Tarih</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+  <script>initDashboard();</script>
+</body>
+</html>

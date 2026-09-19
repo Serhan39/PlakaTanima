@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sertek ALPR - Giris</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body class="login-body">
+  <div class="login-card">
+    <h1>Sertek ALPR</h1>
+    <p class="subtitle">Plaka Tanima ve Erisim Kontrol Platformu</p>
+    <form id="login-form">
+      <label>Kullanici Adi</label>
+      <input type="text" id="username" required autocomplete="username">
+      <label>Sifre</label>
+      <input type="password" id="password" required autocomplete="current-password">
+      <button type="submit">Giris Yap</button>
+      <p id="login-error" class="error"></p>
+    </form>
+  </div>
+  <script src="/app.js"></script>
+  <script>initLoginPage();</script>
+</body>
+</html>
