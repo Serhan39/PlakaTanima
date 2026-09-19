@@ -18,8 +18,13 @@ router = APIRouter(prefix="/api/reports", tags=["reports"])
 
 
 def _default_range(date_from: datetime | None, date_to: datetime | None) -> tuple[datetime, datetime]:
-    end = date_to or datetime.now(timezone.utc)
-    start = date_from or (end - timedelta(days=7))
+    """SQLite, DateTime(timezone=True) kolonlarindaki saat dilimi bilgisini
+    saklamiyor: veritabanindan okunan detected_at degerleri her zaman naive
+    (tzinfo'suz) gelir. Varsayilan `end` (datetime.now(timezone.utc)) ise
+    aware'dir; bu ikisini SQL filtresinde birlikte kullanmak sessizce yanlis
+    sonuc verebilir. Tutarlilik icin her iki ucta da tzinfo'yu atiyoruz."""
+    end = (date_to or datetime.now(timezone.utc)).replace(tzinfo=None)
+    start = (date_from.replace(tzinfo=None) if date_from else end - timedelta(days=7))
     return start, end
 
 
@@ -100,11 +105,13 @@ def logs(
             continue
         results.append(
             DetectionResult(
+                id=row.id,
                 plate=plate,
                 confidence=row.confidence,
                 matched_category=row.matched_category,
                 detected_at=row.detected_at,
                 camera_id=row.camera_id,
+                has_snapshot=bool(row.snapshot_path),
             )
         )
     return results

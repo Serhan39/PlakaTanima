@@ -68,6 +68,7 @@ function initDashboard() {
   setupParkingWidget();
   setupEquipmentTracking();
   loadLogs();
+  loadRecentDetections();
   connectLiveFeed();
 }
 
@@ -78,7 +79,7 @@ function switchTab(tab) {
   if (tab === "cameras") loadCameras();
   if (tab === "logs") loadLogs();
   if (tab === "reports") loadReportCameraOptions().then(loadReports);
-  if (tab === "equipment") { loadZones(); loadGates(); loadEquipmentStatus(); }
+  if (tab === "equipment") { loadZones(); loadEquipmentStatus(); }
 }
 
 function setupWatchlist() {
@@ -293,6 +294,64 @@ async function loadReports() {
     .join("");
 }
 
+async function loadSnapshotInto(imgEl, logId) {
+  try {
+    const response = await fetch(`/api/logs/${logId}/snapshot`, { headers: authHeaders() });
+    if (!response.ok) return;
+    const blob = await response.blob();
+    imgEl.src = URL.createObjectURL(blob);
+  } catch (err) {
+    // fotograf yuklenemezse sessizce yoksay
+  }
+}
+
+function renderDetectionItem(d) {
+  const item = document.createElement("div");
+  item.className = `detection-item ${d.matched_category || ""}`;
+  const main = document.createElement("div");
+  main.className = "detection-item-main";
+  if (d.has_snapshot) {
+    const thumb = document.createElement("img");
+    thumb.className = "detection-thumb";
+    loadSnapshotInto(thumb, d.id);
+    main.appendChild(thumb);
+  }
+  const text = document.createElement("div");
+  text.innerHTML = `<strong>${d.plate}</strong><br><span>${CATEGORY_LABELS[d.matched_category] || "Kayitsiz"} - %${Math.round(d.confidence * 100)}</span>`;
+  main.appendChild(text);
+  item.appendChild(main);
+  return item;
+}
+
+function updateLastVehicleCard(d) {
+  const photo = document.getElementById("last-vehicle-photo");
+  const placeholder = document.getElementById("last-vehicle-placeholder");
+  const info = document.getElementById("last-vehicle-info");
+  info.textContent = `${d.plate} - ${CATEGORY_LABELS[d.matched_category] || "Kayitsiz"} - %${Math.round(d.confidence * 100)}`;
+  if (d.has_snapshot) {
+    loadSnapshotInto(photo, d.id).then(() => {
+      photo.style.display = "block";
+      placeholder.style.display = "none";
+    });
+  } else {
+    photo.style.display = "none";
+    placeholder.style.display = "block";
+    placeholder.textContent = "Bu gecis icin fotograf kaydedilmedi";
+  }
+}
+
+async function loadRecentDetections() {
+  const feedEl = document.getElementById("live-feed");
+  try {
+    const logs = await apiFetch("/api/logs?limit=10");
+    feedEl.innerHTML = "";
+    logs.forEach((d) => feedEl.appendChild(renderDetectionItem(d)));
+    if (logs.length > 0) updateLastVehicleCard(logs[0]);
+  } catch (err) {
+    // yoksay
+  }
+}
+
 function connectLiveFeed() {
   const statusEl = document.getElementById("live-status");
   const feedEl = document.getElementById("live-feed");
@@ -309,14 +368,15 @@ function connectLiveFeed() {
   };
   socket.onmessage = (event) => {
     const data = JSON.parse(event.data);
-    (data.detections || []).forEach((d) => {
-      const item = document.createElement("div");
-      item.className = `detection-item ${d.matched_category || ""}`;
-      item.innerHTML = `<strong>${d.plate}</strong><span>${CATEGORY_LABELS[d.matched_category] || "Kayitsiz"} - %${Math.round(d.confidence * 100)}</span>`;
-      feedEl.prepend(item);
-      while (feedEl.children.length > 30) feedEl.removeChild(feedEl.lastChild);
+    const detections = data.detections || [];
+    detections.forEach((d) => {
+      feedEl.prepend(renderDetectionItem(d));
+      while (feedEl.children.length > 10) feedEl.removeChild(feedEl.lastChild);
     });
-    if ((data.detections || []).length > 0) loadParkingStatus();
+    if (detections.length > 0) {
+      updateLastVehicleCard(detections[detections.length - 1]);
+      loadParkingStatus();
+    }
   };
 }
 
@@ -436,7 +496,18 @@ async function setupEquipmentTracking() {
     }
   });
 
+  document.getElementById("eq-log-filter-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    loadEquipmentLogs();
+  });
+
+  document.getElementById("eq-time-report-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    loadEquipmentTimeReport();
+  });
+
   loadZones();
+  loadEquipmentLogs();
   connectEquipmentLiveFeed();
 }
 
@@ -451,6 +522,14 @@ async function loadZones() {
   const currentValue = select.value;
   select.innerHTML = zones.map((z) => `<option value="${z.id}">${z.name}</option>`).join("");
   if (currentValue) select.value = currentValue;
+
+  const filterSelect = document.getElementById("eq-log-zone");
+  const filterCurrent = filterSelect.value;
+  filterSelect.innerHTML =
+    `<option value="">Tum Alanlar</option>` + zones.map((z) => `<option value="${z.id}">${z.name}</option>`).join("");
+  filterSelect.value = filterCurrent;
+
+  loadGates();
 }
 
 async function deleteZone(id) {
@@ -478,6 +557,12 @@ async function loadGates() {
       </tr>`
     )
     .join("");
+
+  const filterSelect = document.getElementById("eq-log-gate");
+  const filterCurrent = filterSelect.value;
+  filterSelect.innerHTML =
+    `<option value="">Tum Kapilar</option>` + gates.map((g) => `<option value="${g.id}">${g.name}</option>`).join("");
+  filterSelect.value = filterCurrent;
 }
 
 async function deleteGate(id) {
@@ -504,6 +589,67 @@ async function loadEquipmentStatus() {
     .join("");
 }
 
+function formatDuration(totalSeconds) {
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.round((totalSeconds % 3600) / 60);
+  if (hours > 0) return `${hours}s ${minutes}dk`;
+  return `${minutes}dk`;
+}
+
+function equipmentLogQueryParams() {
+  const params = new URLSearchParams();
+  const from = document.getElementById("eq-log-from").value;
+  const to = document.getElementById("eq-log-to").value;
+  const zone = document.getElementById("eq-log-zone").value;
+  const gate = document.getElementById("eq-log-gate").value;
+  const plate = document.getElementById("eq-log-plate").value;
+  if (from) params.set("date_from", from);
+  if (to) params.set("date_to", to);
+  if (zone) params.set("zone_id", zone);
+  if (gate) params.set("gate_id", gate);
+  if (plate) params.set("plate_query", plate);
+  return params;
+}
+
+async function loadEquipmentLogs() {
+  const params = equipmentLogQueryParams();
+  const rows = await apiFetch(`/api/equipment/logs?${params.toString()}`);
+  const tbody = document.querySelector("#equipment-logs-table tbody");
+  tbody.innerHTML = rows
+    .map(
+      (r) => `<tr>
+        <td>${r.plate}</td>
+        <td>${r.zone_name}</td>
+        <td>${r.gate_name}</td>
+        <td>${DIRECTION_LABELS[r.direction] || r.direction}</td>
+        <td>${new Date(r.created_at).toLocaleString("tr-TR")}</td>
+      </tr>`
+    )
+    .join("");
+}
+
+async function loadEquipmentTimeReport() {
+  const params = new URLSearchParams();
+  const from = document.getElementById("eq-tr-from").value;
+  const to = document.getElementById("eq-tr-to").value;
+  if (from) params.set("date_from", from);
+  if (to) params.set("date_to", to);
+
+  const entries = await apiFetch(`/api/equipment/time-report?${params.toString()}`);
+  const tbody = document.querySelector("#equipment-time-report-table tbody");
+  const rows = [];
+  entries.forEach((entry) => {
+    entry.breakdown.forEach((b, index) => {
+      rows.push(`<tr>
+        <td>${index === 0 ? entry.plate : ""}</td>
+        <td>${b.zone_name}</td>
+        <td>${formatDuration(b.duration_seconds)}</td>
+      </tr>`);
+    });
+  });
+  tbody.innerHTML = rows.join("") || `<tr><td colspan="3">Secilen aralikta kayit yok</td></tr>`;
+}
+
 function connectEquipmentLiveFeed() {
   const statusEl = document.getElementById("equipment-live-status");
   const feedEl = document.getElementById("equipment-live-feed");
@@ -527,6 +673,9 @@ function connectEquipmentLiveFeed() {
       feedEl.prepend(item);
       while (feedEl.children.length > 30) feedEl.removeChild(feedEl.lastChild);
     });
-    if ((data.events || []).length > 0) loadEquipmentStatus();
+    if ((data.events || []).length > 0) {
+      loadEquipmentStatus();
+      loadEquipmentLogs();
+    }
   };
 }

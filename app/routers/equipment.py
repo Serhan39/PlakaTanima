@@ -22,7 +22,9 @@ from app.schemas import (
     EquipmentGateCreate,
     EquipmentGateRead,
     EquipmentStatusRead,
+    EquipmentTimeReportEntry,
     EquipmentZoneCreate,
+    EquipmentZoneDuration,
     EquipmentZoneRead,
     FeatureFlag,
 )
@@ -131,20 +133,133 @@ def status_list(db: Session = Depends(get_db), _: User = Depends(get_current_use
     ]
 
 
+def _default_range(date_from: datetime | None, date_to: datetime | None) -> tuple[datetime, datetime]:
+    """SQLite, DateTime(timezone=True) kolonlarindaki saat dilimi bilgisini
+    saklamiyor: veritabanindan okunan created_at degerleri her zaman naive
+    (tzinfo'suz) gelir. Varsayilan `end` (datetime.now(timezone.utc)) ise
+    aware'dir; ikisini karsilastirmak/cikarmak TypeError'a ya da sessizce
+    yanlis SQL filtrelemeye yol acar. Bu yuzden burada her iki ucta da
+    tzinfo'yu atip, tum hesaplamayi tutarli sekilde naive-UTC uzerinden
+    yapiyoruz."""
+    end = (date_to or datetime.now(timezone.utc)).replace(tzinfo=None)
+    start = (date_from.replace(tzinfo=None) if date_from else end - timedelta(days=7))
+    return start, end
+
+
 @router.get("/logs", response_model=list[EquipmentCrossingRead])
-def crossing_logs(limit: int = 100, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    rows = db.query(EquipmentCrossingLog).order_by(EquipmentCrossingLog.created_at.desc()).limit(min(limit, 500)).all()
-    return [
-        EquipmentCrossingRead(
-            plate=decrypt_text(row.plate_encrypted),
-            gate_id=row.gate_id,
-            zone_id=row.zone_id,
-            direction=row.direction,
-            confidence=row.confidence,
-            created_at=row.created_at,
+def crossing_logs(
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    zone_id: int | None = None,
+    gate_id: int | None = None,
+    plate_query: str | None = None,
+    limit: int = 200,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    start, end = _default_range(date_from, date_to)
+    query = db.query(EquipmentCrossingLog).filter(
+        EquipmentCrossingLog.created_at >= start, EquipmentCrossingLog.created_at < end
+    )
+    if zone_id is not None:
+        query = query.filter(EquipmentCrossingLog.zone_id == zone_id)
+    if gate_id is not None:
+        query = query.filter(EquipmentCrossingLog.gate_id == gate_id)
+    rows = query.order_by(EquipmentCrossingLog.created_at.desc()).limit(min(limit, 500)).all()
+
+    zones = {z.id: z.name for z in db.query(EquipmentZone).all()}
+    gates = {g.id: g.name for g in db.query(EquipmentGate).all()}
+
+    needle = (plate_query or "").strip().upper().replace(" ", "")
+    results = []
+    for row in rows:
+        plate = decrypt_text(row.plate_encrypted)
+        if needle and needle not in plate.replace(" ", "").upper():
+            continue
+        results.append(
+            EquipmentCrossingRead(
+                plate=plate,
+                gate_id=row.gate_id,
+                gate_name=gates.get(row.gate_id, "?"),
+                zone_id=row.zone_id,
+                zone_name=zones.get(row.zone_id, "?"),
+                direction=row.direction,
+                confidence=row.confidence,
+                created_at=row.created_at,
+            )
         )
-        for row in rows
-    ]
+    return results
+
+
+@router.get("/time-report", response_model=list[EquipmentTimeReportEntry])
+def time_report(
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Her is makinesinin secilen tarih araliginda hangi alanda (veya
+    disarida) ne kadar sure gecirdigini hesaplar. Gecis kayitlari arasindaki
+    zaman farklarini, aralaigin baslangicindaki durumdan itibaren zincirleme
+    olarak ilgili alana/disari'ya yazarak bulur."""
+    start, end = _default_range(date_from, date_to)
+    zones = {z.id: z.name for z in db.query(EquipmentZone).all()}
+
+    plate_hashes = [row[0] for row in db.query(EquipmentCrossingLog.plate_hash).distinct().all()]
+
+    entries: list[EquipmentTimeReportEntry] = []
+    for plate_hash in plate_hashes:
+        prior = (
+            db.query(EquipmentCrossingLog)
+            .filter(EquipmentCrossingLog.plate_hash == plate_hash, EquipmentCrossingLog.created_at < start)
+            .order_by(EquipmentCrossingLog.created_at.desc())
+            .first()
+        )
+        events = (
+            db.query(EquipmentCrossingLog)
+            .filter(
+                EquipmentCrossingLog.plate_hash == plate_hash,
+                EquipmentCrossingLog.created_at >= start,
+                EquipmentCrossingLog.created_at < end,
+            )
+            .order_by(EquipmentCrossingLog.created_at.asc())
+            .all()
+        )
+        if not prior and not events:
+            continue
+
+        current_zone_id = prior.zone_id if prior and prior.direction == CameraDirection.ENTRY else None
+        plate_encrypted = prior.plate_encrypted if prior else events[0].plate_encrypted
+
+        durations: dict[int | None, float] = {}
+        cursor = start
+        for event in events:
+            elapsed = max((event.created_at - cursor).total_seconds(), 0)
+            durations[current_zone_id] = durations.get(current_zone_id, 0.0) + elapsed
+            current_zone_id = event.zone_id if event.direction == CameraDirection.ENTRY else None
+            cursor = event.created_at
+
+        durations[current_zone_id] = durations.get(current_zone_id, 0.0) + max((end - cursor).total_seconds(), 0)
+
+        breakdown = [
+            EquipmentZoneDuration(
+                zone_id=zid,
+                zone_name=zones.get(zid, "Disarida") if zid else "Disarida",
+                duration_seconds=round(secs),
+            )
+            for zid, secs in sorted(durations.items(), key=lambda kv: -kv[1])
+            if round(secs) > 0
+        ]
+        entries.append(
+            EquipmentTimeReportEntry(
+                plate=decrypt_text(plate_encrypted),
+                breakdown=breakdown,
+                total_seconds=round(sum(durations.values())),
+            )
+        )
+
+    entries.sort(key=lambda e: e.plate)
+    return entries
 
 
 # --- Tespit ------------------------------------------------------------------

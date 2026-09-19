@@ -73,11 +73,13 @@ class WatchlistRead(BaseModel):
 
 
 class DetectionResult(BaseModel):
+    id: int
     plate: str
     confidence: float
     matched_category: WatchlistCategory | None
     detected_at: datetime
     camera_id: int | None = None
+    has_snapshot: bool = False
 
 
 class ReportSummary(BaseModel):
@@ -148,7 +150,21 @@ class EquipmentStatusRead(BaseModel):
 class EquipmentCrossingRead(BaseModel):
     plate: str
     gate_id: int
+    gate_name: str
     zone_id: int
+    zone_name: str
     direction: CameraDirection
     confidence: float
     created_at: datetime
+
+
+class EquipmentZoneDuration(BaseModel):
+    zone_id: int | None
+    zone_name: str
+    duration_seconds: int
+
+
+class EquipmentTimeReportEntry(BaseModel):
+    plate: str
+    breakdown: list[EquipmentZoneDuration]
+    total_seconds: int

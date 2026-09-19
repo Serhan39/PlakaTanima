@@ -21,6 +21,7 @@ def test_expected_routes_registered():
         "/api/cameras/{camera_id}/test-relay",
         "/api/detect/image",
         "/api/logs",
+        "/api/logs/{log_id}/snapshot",
         "/api/reports/summary",
         "/api/reports/logs",
         "/api/reports/export.csv",
@@ -32,6 +33,8 @@ def test_expected_routes_registered():
         "/api/equipment/gates",
         "/api/equipment/status",
         "/api/equipment/detect/image",
+        "/api/equipment/logs",
+        "/api/equipment/time-report",
         "/ws/alerts",
         "/ws/equipment",
     ]:

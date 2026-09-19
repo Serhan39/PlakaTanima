@@ -9,6 +9,7 @@ from app.models import Camera, CameraDirection, DetectionLog, ParkingState, Rela
 from app.notifications import maybe_send_alert
 from app.outputs.relay import build_relay_driver
 from app.security import get_current_user
+from app.snapshots import save_snapshot
 from app.vision.pipeline import PipelineResult, build_default_detector, recognize_plates
 from app.websocket_manager import broadcast_detection
 
@@ -69,6 +70,10 @@ async def detect_from_image(
 
     camera = db.get(Camera, camera_id) if camera_id is not None else None
     results: list[PipelineResult] = recognize_plates(frame, _get_detector(), db)
+
+    snapshot_path = save_snapshot(frame) if results else ""
+
+    payload = []
     for result in results:
         log = DetectionLog(
             camera_id=camera_id,
@@ -76,13 +81,24 @@ async def detect_from_image(
             plate_hash=deterministic_hash(result.plate),
             confidence=result.confidence,
             matched_category=result.matched_category,
+            snapshot_path=snapshot_path,
         )
         db.add(log)
+        db.flush()  # log.id'yi almak icin
         _update_parking_state(db, camera, result.plate, deterministic_hash(result.plate))
         background_tasks.add_task(_maybe_trigger_relay, camera_id, result.matched_category)
         background_tasks.add_task(maybe_send_alert, result.plate, result.matched_category, camera.name if camera else "")
+        payload.append(
+            {
+                "id": log.id,
+                "plate": result.plate,
+                "confidence": result.confidence,
+                "matched_category": result.matched_category,
+                "has_snapshot": bool(snapshot_path),
+            }
+        )
     db.commit()
 
-    payload = [r.__dict__ for r in results]
-    await broadcast_detection({"camera_id": camera_id, "detections": payload})
+    if payload:
+        await broadcast_detection({"camera_id": camera_id, "detections": payload})
     return payload

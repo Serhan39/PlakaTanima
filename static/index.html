@@ -40,6 +40,14 @@
         <button id="parking-capacity-btn" class="ghost-btn">Kapasiteyi Duzenle</button>
       </div>
 
+      <h3>Son Gecen Arac</h3>
+      <div class="last-vehicle-card" id="last-vehicle-card">
+        <img id="last-vehicle-photo" alt="Son gecen arac" style="display:none;">
+        <div id="last-vehicle-placeholder" class="last-vehicle-placeholder">Henuz tespit yok</div>
+        <div class="last-vehicle-info" id="last-vehicle-info"></div>
+      </div>
+
+      <h3>Son 10 Gecis</h3>
       <div id="live-feed" class="detection-list"></div>
     </section>
 
@@ -174,6 +182,33 @@
       <h3>Guncel Durum</h3>
       <table class="data-table" id="equipment-status-table">
         <thead><tr><th>Plaka</th><th>Durum</th><th>Son Guncelleme</th></tr></thead>
+        <tbody></tbody>
+      </table>
+
+      <h3>Gecis Kayitlari</h3>
+      <p class="hint">Hangi alandaki hangi kapidan hangi arac gecmis - tarih, alan, kapi veya plakaya gore filtreleyin.</p>
+      <form id="eq-log-filter-form" class="inline-form">
+        <label>Baslangic <input type="datetime-local" id="eq-log-from"></label>
+        <label>Bitis <input type="datetime-local" id="eq-log-to"></label>
+        <select id="eq-log-zone"><option value="">Tum Alanlar</option></select>
+        <select id="eq-log-gate"><option value="">Tum Kapilar</option></select>
+        <input type="text" id="eq-log-plate" placeholder="Plaka ara">
+        <button type="submit">Filtrele</button>
+      </form>
+      <table class="data-table" id="equipment-logs-table">
+        <thead><tr><th>Plaka</th><th>Alan</th><th>Kapi</th><th>Yon</th><th>Zaman</th></tr></thead>
+        <tbody></tbody>
+      </table>
+
+      <h3>Zaman Raporu (Alanda Gecirilen Sure)</h3>
+      <p class="hint">Secilen tarih araliginda her aracin hangi alanda/disarida ne kadar sure gecirdigi.</p>
+      <form id="eq-time-report-form" class="inline-form">
+        <label>Baslangic <input type="datetime-local" id="eq-tr-from"></label>
+        <label>Bitis <input type="datetime-local" id="eq-tr-to"></label>
+        <button type="submit">Getir</button>
+      </form>
+      <table class="data-table" id="equipment-time-report-table">
+        <thead><tr><th>Plaka</th><th>Konum</th><th>Sure</th></tr></thead>
         <tbody></tbody>
       </table>
     </section>

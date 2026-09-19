@@ -24,8 +24,9 @@ ilham alındığı ve lisans/AGPL riskinin nasıl yönetildiği).
   uyumu için).
 - **Rol tabanlı yetkilendirme** — yönetici / operatör / izleyici rolleri,
   JWT tabanlı oturum.
-- **Canlı web paneli** — WebSocket ile anlık tespit akışı, izleme listesi
-  ve kamera yönetimi, tespit kayıt geçmişi.
+- **Canlı web paneli** — WebSocket ile anlık tespit akışı, son geçen aracın
+  fotoğrafı, son 10 geçişin küçük fotoğraflı listesi, izleme listesi ve
+  kamera yönetimi, tespit kayıt geçmişi.
 - **Raporlama** — tarih/kamera/kategori/plaka bazlı filtrelenebilir olay
   raporu, özet istatistik kartları, CSV dışa aktarma.
 - **E-posta bildirimleri** — aranan/kara liste plakası görülünce anlık
@@ -159,6 +160,10 @@ plaka formatini **zorunlu kilmaz** — OCR, herhangi bir alfanumerik kodu
 - Canli Izleme paneli "ABCD plakali arac B alaninda" / "... disarida" gibi
   mesajlari aninda WebSocket ile gosterir; Guncel Durum tablosu tum
   makinelerin son bilinen konumunu listeler.
+- **Gecis Kayitlari**: tarih/alan/kapi/plakaya gore filtrelenebilir, hangi
+  aracin hangi alandaki hangi kapidan gectigini gosteren tablo.
+- **Zaman Raporu**: secilen tarih araliginda her aracin hangi alanda (veya
+  disarida) toplam ne kadar sure gecirdigini hesaplar.
 - Kapi kameralarindan goruntu almak icin `app/equipment_gate_worker.py`
   kullanilir (docker-compose icinde `equipment-worker` servisi olarak
   hazir gelir, `.env` icinde `EQUIPMENT_WORKER_USERNAME`/`_PASSWORD`

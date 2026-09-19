@@ -1,4 +1,5 @@
 import os
+from datetime import datetime, timedelta, timezone
 
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret")
 os.environ.setdefault("WATCHLIST_ENCRYPTION_KEY", "Gz3n5J9y8k2p6xQm1wZ7fL0oR4sT8vU2cA6bD9eH3iM=")
@@ -6,10 +7,10 @@ os.environ.setdefault("WATCHLIST_ENCRYPTION_KEY", "Gz3n5J9y8k2p6xQm1wZ7fL0oR4sT8
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.crypto import decrypt_text
+from app.crypto import decrypt_text, deterministic_hash, encrypt_text
 from app.database import Base
 from app.models import CameraDirection, EquipmentCrossingLog, EquipmentGate, EquipmentState, EquipmentZone
-from app.routers.equipment import apply_crossing
+from app.routers.equipment import apply_crossing, crossing_logs, time_report
 from app.settings_store import get_setting, set_setting
 from app.vision.ocr import _best_candidate
 
@@ -103,6 +104,113 @@ def test_feature_flag_defaults_to_disabled():
     assert get_setting(db, "equipment_tracking_enabled", "false") == "false"
     set_setting(db, "equipment_tracking_enabled", "true")
     assert get_setting(db, "equipment_tracking_enabled", "false") == "true"
+
+
+def test_crossing_logs_filters_by_zone_and_gate():
+    db = _session()
+    exit_a, entry_b = _zone_and_gates(db)
+    apply_crossing(db, entry_b, "IS-001", 0.8)
+    apply_crossing(db, exit_a, "IS-002", 0.7)
+    db.commit()
+
+    only_b = crossing_logs(zone_id=2, db=db, _=None)
+    assert len(only_b) == 1
+    assert only_b[0].plate == "IS-001"
+    assert only_b[0].zone_name == "B Alani"
+    assert only_b[0].gate_name == "B Giris"
+
+    only_exit_a = crossing_logs(gate_id=1, db=db, _=None)
+    assert len(only_exit_a) == 1
+    assert only_exit_a[0].plate == "IS-002"
+    assert only_exit_a[0].direction == CameraDirection.EXIT
+
+
+def test_crossing_logs_filters_by_plate_query():
+    db = _session()
+    exit_a, entry_b = _zone_and_gates(db)
+    apply_crossing(db, entry_b, "IS-001", 0.8)
+    apply_crossing(db, entry_b, "MAK-999", 0.8)
+    db.commit()
+
+    results = crossing_logs(plate_query="is-0", db=db, _=None)
+    assert len(results) == 1
+    assert results[0].plate == "IS-001"
+
+
+def test_time_report_computes_durations_per_zone():
+    db = _session()
+    exit_a, entry_b = _zone_and_gates(db)
+    start = datetime(2026, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+    end = start + timedelta(hours=1)
+
+    plate_hash = deterministic_hash("IS-001")
+    plate_encrypted = encrypt_text("IS-001")
+
+    db.add(
+        EquipmentCrossingLog(
+            gate_id=entry_b.id,
+            plate_encrypted=plate_encrypted,
+            plate_hash=plate_hash,
+            direction=CameraDirection.ENTRY,
+            zone_id=entry_b.zone_id,
+            confidence=0.9,
+            created_at=start + timedelta(minutes=10),
+        )
+    )
+    db.add(
+        EquipmentCrossingLog(
+            gate_id=exit_a.id,
+            plate_encrypted=plate_encrypted,
+            plate_hash=plate_hash,
+            direction=CameraDirection.EXIT,
+            zone_id=exit_a.zone_id,
+            confidence=0.9,
+            created_at=start + timedelta(minutes=40),
+        )
+    )
+    db.commit()
+
+    report = time_report(date_from=start, date_to=end, db=db, _=None)
+
+    assert len(report) == 1
+    entry = report[0]
+    assert entry.plate == "IS-001"
+    assert entry.total_seconds == 3600
+
+    breakdown = {b.zone_name: b.duration_seconds for b in entry.breakdown}
+    assert breakdown["Disarida"] == 30 * 60  # 0-10dk + 40-60dk disarida
+    assert breakdown["B Alani"] == 30 * 60  # 10-40dk B alaninda
+
+
+def test_time_report_carries_state_from_before_period_start():
+    db = _session()
+    exit_a, entry_b = _zone_and_gates(db)
+    start = datetime(2026, 1, 1, 1, 0, 0, tzinfo=timezone.utc)
+    end = start + timedelta(hours=1)
+
+    plate_hash = deterministic_hash("IS-002")
+    plate_encrypted = encrypt_text("IS-002")
+
+    # Rapor araligindan ONCE B alanina girmis; arac raporun basinda zaten
+    # B alaninda olmali (disarida degil).
+    db.add(
+        EquipmentCrossingLog(
+            gate_id=entry_b.id,
+            plate_encrypted=plate_encrypted,
+            plate_hash=plate_hash,
+            direction=CameraDirection.ENTRY,
+            zone_id=entry_b.zone_id,
+            confidence=0.9,
+            created_at=start - timedelta(minutes=30),
+        )
+    )
+    db.commit()
+
+    report = time_report(date_from=start, date_to=end, db=db, _=None)
+
+    assert len(report) == 1
+    breakdown = {b.zone_name: b.duration_seconds for b in report[0].breakdown}
+    assert breakdown == {"B Alani": 3600}
 
 
 def test_loose_ocr_candidate_does_not_require_turkish_plate_format():
