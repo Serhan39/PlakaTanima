@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     plate_detector_model_path: str = "models/plate_detector.onnx"
     detection_confidence_threshold: float = 0.5
     company_name: str = "Sertek Bilisim"
+    ocr_engine: str = "tesseract"
 
 
 @lru_cache

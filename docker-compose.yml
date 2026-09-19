@@ -1,5 +1,6 @@
 services:
   api:
+    image: sertek-alpr:latest
     build: .
     ports:
       - "8000:8000"
@@ -10,6 +11,7 @@ services:
     restart: unless-stopped
 
   worker:
+    image: sertek-alpr:latest
     build: .
     command: ["python", "-m", "app.camera_worker"]
     env_file: .env

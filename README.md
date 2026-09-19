@@ -47,9 +47,16 @@ ilham alındığı ve lisans/AGPL riskinin nasıl yönetildiği).
   - `OnnxPlateDetector`: Eğitilmiş bir YOLO tabanlı modelin ONNX haline
     getirilip `onnxruntime` ile çalıştırıldığı üretim motoru (bkz. aşağıda
     **Model Tedariki**).
-- `app/vision/ocr.py` — EasyOCR (Apache-2.0) ile karakter okuma.
+- `app/vision/ocr.py` — değiştirilebilir OCR motoru: varsayılan olarak
+  **Tesseract** (tamamen çevrimdışı), opsiyonel olarak EasyOCR (bkz.
+  **OCR Motoru Seçimi**).
 - `app/camera_worker.py` — kamera başına RTSP'den kare alıp API'ye gönderen
   bağımsız süreç; API sürecinden izole, yatayda ölçeklenebilir.
+
+Her katman (tespit motoru, OCR motoru, veritabanı modelleri, API route'ları,
+panel arayüzü) birbirinden ayrı dosyalarda ve arayüz (interface) üzerinden
+bağlı olacak şekilde tasarlandı; bu sayede ileride bir bileşeni değiştirmek
+veya kaldırmak diğer katmanları bozmadan yapılabilir.
 
 ## Model Tedariki (Önemli)
 
@@ -67,18 +74,51 @@ yalnızca geliştirme ortamında kullanılmalı, ürünle birlikte dağıtılan
 çalışma zamanına dahil edilmemelidir — detaylar için
 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md).
 
+## OCR Motoru Seçimi
+
+| Motor | `.env` ayarı | İnternet gerekir mi? | Not |
+|---|---|---|---|
+| **Tesseract** (varsayılan) | `OCR_ENGINE=tesseract` | Hayır | Docker imajına apt ile gömülür, tamamen çevrimdışı çalışır |
+| EasyOCR (opsiyonel) | `OCR_ENGINE=easyocr` | İlk çalıştırmada evet* | Daha yüksek doğruluk, `pip install -r requirements-easyocr.txt` gerekir |
+
+\* İnternetsiz kurulumda EasyOCR kullanmayın; ya Tesseract'ta kalın ya da
+model ağırlıklarını Docker imajını **derlerken** (internet varken) önceden
+indirip imaja gömün.
+
 ## Kurulum
 
 ```bash
-cp .env.example .env
-# .env içindeki JWT_SECRET_KEY ve WATCHLIST_ENCRYPTION_KEY değerlerini üretin:
-python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+make setup                     # .env dosyasini olusturur
+# .env icinde JWT_SECRET_KEY ve WATCHLIST_ENCRYPTION_KEY icin onerilen komutu calistirip degerleri yapistirin
 
-docker compose up -d --build
-docker compose exec api python -m scripts.seed_admin admin GucluBirSifre123
+make up                        # imajlari derler ve baslatir (docker compose up -d --build)
+make seed-admin PASSWORD=GucluBirSifre123
 ```
 
 Panel: `http://localhost:8000` (giriş: `admin` / belirlediğiniz şifre).
+
+Diğer komutlar: `make down` (durdur), `make logs` (canlı log), `make test`
+(birim testleri), `make package` (aşağıdaki internetsiz kurulum paketini
+oluşturur).
+
+## İnternetsiz (Air-Gapped) Kurulum
+
+Ürün, imaj **bir kez internetli bir makinede derlendikten sonra** hiçbir
+çalışma zamanı internet bağlantısı gerektirmez (varsayılan Tesseract OCR +
+yerel ONNX/Haar tespit motoru + tüm frontend dosyaları yerel). İnternetsiz
+bir saha/müşteri sunucusuna kurmak için:
+
+```bash
+make package                   # sertek-alpr-offline.tar dosyasini uretir
+```
+
+Bu `.tar` dosyasını, `docker-compose.yml`, `.env` ve (varsa)
+`models/plate_detector.onnx` dosyasıyla birlikte hedef sunucuya taşıyın:
+
+```bash
+docker load -i sertek-alpr-offline.tar
+docker compose up -d           # --build KULLANMAYIN, imaj zaten yuklu
+```
 
 Worker'ın API'ye bağlanabilmesi için `.env` dosyasına bir servis kullanıcısı
 tanımlayın:
@@ -100,6 +140,9 @@ uvicorn app.main:app --reload
 
 pytest
 ```
+
+Her push/PR'da `.github/workflows/ci.yml` ile testler ve sözdizimi kontrolü
+otomatik çalışır (GitHub Actions).
 
 ---
 

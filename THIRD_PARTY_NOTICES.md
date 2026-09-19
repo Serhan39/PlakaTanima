@@ -11,7 +11,8 @@ gomulmeye izin verir (hicbiri AGPL/GPL gibi "copyleft" bir lisans degildir).
 | Pydantic | Veri dogrulama | MIT |
 | onnxruntime | Model calisma zamani (plaka tespiti) | MIT |
 | OpenCV (opencv-python-headless) | Goruntu isleme, demo tespit motoru | Apache-2.0 |
-| EasyOCR | Karakter tanima (OCR) | Apache-2.0 |
+| Tesseract OCR + pytesseract | Karakter tanima (OCR) - varsayilan, cevrimdisi | Apache-2.0 |
+| EasyOCR (opsiyonel, requirements-easyocr.txt) | Karakter tanima (OCR) - yuksek dogruluk modu | Apache-2.0 |
 | cryptography | Izleme listesi sifreleme (Fernet) | Apache-2.0 / BSD |
 | python-jose | JWT oturum yonetimi | MIT |
 | passlib | Sifre hash'leme (bcrypt) | BSD |
@@ -38,6 +39,21 @@ Alternatif olarak:
   ya da klasik OpenCV tabanli yontemler) tercih edilebilir.
 
 Bu konuda nihai karar, hukuk/uyum ekibiyle teyit edilerek verilmelidir.
+
+## OCR Motoru ve Cevrimdisi (Offline) Calisma
+
+Varsayilan OCR motoru **Tesseract**'tir (`OCR_ENGINE=tesseract`): Docker
+imaji derlenirken apt ile birlikte kurulur (`tesseract-ocr`,
+`tesseract-ocr-tur`), hicbir model calisma zamaninda internetten
+indirilmez. Bu sayede urun, imaj bir kez (internetli bir ortamda)
+derlendikten sonra tamamen internetsiz/air-gapped ortamlarda calisabilir
+(bkz. README.md - Internetsiz Kurulum).
+
+Opsiyonel `easyocr` motoru (`OCR_ENGINE=easyocr`,
+`requirements-easyocr.txt`) daha yuksek dogruluk sunabilir ancak ilk
+calistirmada model agirliklarini internetten indirir; internetsiz
+kurulumlarda kullanilmamali, ya da model Docker imaji build asamasinda
+(internet varken) onceden indirilip imaja gomulmelidir.
 
 ## Ilham Alinan Acik Kaynak Projeler
 
