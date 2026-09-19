@@ -2,10 +2,11 @@ import re
 
 # Turkiye plakalarinda kullanilmayan harfler: Q, W, X (Turk alfabesinde/plaka mevzuatinda yok)
 _LETTERS = "ABCDEFGHIJKLMNOPRSTUVYZ"
-_PLATE_RE = re.compile(
-    rf"^(0[1-9]|[1-7][0-9]|8[01])"
-    rf"([{_LETTERS}]{{1}}\d{{4,5}}|[{_LETTERS}]{{2}}\d{{3,4}}|[{_LETTERS}]{{3}}\d{{2}})$"
-)
+# Il kodu + 1-3 harf + 2-5 rakam. "Standart" kombinasyonlar (1 harf+4-5 rakam,
+# 2 harf+3-4 rakam, 3 harf+2 rakam) disinda gercekte kullanilan plakalar da
+# (orn. 3 harf+3 rakam) var; harf/rakam sayisini katı bir esleme yerine genis
+# bir aralikla sinirlamak, gercek plakalari yanlislikla reddetmeyi onler.
+_PLATE_RE = re.compile(rf"^(0[1-9]|[1-7][0-9]|8[01])[{_LETTERS}]{{1,3}}\d{{2,5}}$")
 
 _OCR_CONFUSION_MAP = str.maketrans({"İ": "I", "Ç": "C", "Ş": "S", "Ğ": "G", "Ü": "U", "Ö": "O", "0": "0"})
 
