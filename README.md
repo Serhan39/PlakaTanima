@@ -146,9 +146,15 @@ kendi bastiracagi ozel bir kod/etiket konur. Bu ozellik standart Turkiye
 plaka formatini **zorunlu kilmaz** — OCR, herhangi bir alfanumerik kodu
 (en az `EQUIPMENT_MIN_CODE_LENGTH` karakter) kabul eder.
 
-- **Varsayilan olarak gizlidir.** Sekme, sadece bir yonetici panelin sag
-  ust kosesindeki "Is Makinasi Takip" onay kutusunu isaretleyip ozelligi
+- **Varsayilan olarak gizlidir.** Sekme, sadece yetkili bir kullanici panelin
+  sag ust kosesindeki "Is Makinasi Takip" onay kutusunu isaretleyip ozelligi
   acana kadar hicbir kullaniciya gorunmez.
+- **Rolden bagimsiz yetki**: bu onay kutusunu sadece yoneticiler degil,
+  "Kullanicilar" sekmesinden (sadece yoneticiler erisebilir) bir izleyici
+  hesabina ozel olarak verilen "Is Makinasi Takibini Acip Kapatabilir"
+  yetkisiyle isaretlenmis izleyiciler de gorup kullanabilir. Bu, o
+  kullaniciya baska hicbir yonetici hakki (kamera/kullanici yonetimi vb.)
+  vermez, sadece bu tek anahtari acar.
 - **Alan (Zone)**: adlandirilmis bolgeler (orn. "A Alani", "B Alani").
 - **Kapi (Gate)**: bir alana bagli kamera konumu.
 - **Cizgi (sanal tripwire) tespiti**: kamera genis bir alani goruyorsa

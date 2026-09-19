@@ -2,6 +2,7 @@ const CATEGORY_LABELS = { allowed: "Izinli", staff: "Personel", wanted: "Aranan"
 
 function getToken() { return localStorage.getItem("token"); }
 function getRole() { return localStorage.getItem("role"); }
+function canManageEquipment() { return getRole() === "admin" || !!localStorage.getItem("canManageEquipment"); }
 
 function authHeaders(extra = {}) {
   return { Authorization: `Bearer ${getToken()}`, ...extra };
@@ -36,6 +37,7 @@ function initLoginPage() {
       const data = await response.json();
       localStorage.setItem("token", data.access_token);
       localStorage.setItem("role", data.role);
+      localStorage.setItem("canManageEquipment", data.can_manage_equipment ? "1" : "");
       window.location.href = "/index.html";
     } catch (err) {
       errorEl.textContent = err.message;
@@ -60,6 +62,8 @@ function initDashboard() {
 
   if (getRole() !== "admin") {
     document.querySelector('[data-tab="cameras"]').style.display = "none";
+  } else {
+    document.getElementById("users-tab-btn").style.display = "";
   }
 
   setupWatchlist();
@@ -67,6 +71,7 @@ function initDashboard() {
   setupReports();
   setupParkingWidget();
   setupEquipmentTracking();
+  setupUsers();
   loadLogs();
   loadRecentDetections();
   connectLiveFeed();
@@ -80,6 +85,7 @@ function switchTab(tab) {
   if (tab === "logs") loadLogs();
   if (tab === "reports") loadReportCameraOptions().then(loadReports);
   if (tab === "equipment") { loadZones(); loadEquipmentStatus(); }
+  if (tab === "users") loadUsers();
 }
 
 function setupWatchlist() {
@@ -424,12 +430,63 @@ async function loadParkingStatus() {
   }
 }
 
+const ROLE_LABELS = { admin: "Yonetici", operator: "Operator", viewer: "Izleyici" };
+
+function setupUsers() {
+  if (getRole() !== "admin") return;
+
+  document.getElementById("user-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const username = document.getElementById("user-username").value;
+    const password = document.getElementById("user-password").value;
+    const role = document.getElementById("user-role").value;
+    const can_manage_equipment = document.getElementById("user-can-manage-equipment").checked;
+    try {
+      await apiFetch("/api/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password, role, can_manage_equipment }),
+      });
+      event.target.reset();
+      loadUsers();
+    } catch (err) {
+      alert(err.message);
+    }
+  });
+}
+
+async function loadUsers() {
+  const users = await apiFetch("/api/users");
+  const tbody = document.querySelector("#user-table tbody");
+  tbody.innerHTML = users
+    .map(
+      (u) => `<tr>
+        <td>${u.username}</td>
+        <td>${ROLE_LABELS[u.role] || u.role}</td>
+        <td>${u.can_manage_equipment ? "Var" : "-"}</td>
+        <td>${new Date(u.created_at).toLocaleString("tr-TR")}</td>
+        <td><button onclick="deleteUser(${u.id})">Sil</button></td>
+      </tr>`
+    )
+    .join("");
+}
+
+async function deleteUser(id) {
+  if (!confirm("Bu kullaniciyi silmek istediginize emin misiniz?")) return;
+  try {
+    await apiFetch(`/api/users/${id}`, { method: "DELETE" });
+    loadUsers();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
 async function setupEquipmentTracking() {
   const toggleWrap = document.getElementById("equipment-toggle-wrap");
   const toggle = document.getElementById("equipment-toggle");
   const tabBtn = document.getElementById("equipment-tab-btn");
 
-  if (getRole() === "admin") {
+  if (canManageEquipment()) {
     toggleWrap.style.display = "flex";
     toggle.addEventListener("change", async () => {
       try {

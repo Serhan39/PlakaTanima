@@ -9,12 +9,14 @@ class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
     role: UserRole
+    can_manage_equipment: bool = False
 
 
 class UserCreate(BaseModel):
     username: str
     password: str
     role: UserRole = UserRole.VIEWER
+    can_manage_equipment: bool = False
 
 
 class UserRead(BaseModel):
@@ -24,6 +26,7 @@ class UserRead(BaseModel):
     role: UserRole
     is_active: bool
     created_at: datetime
+    can_manage_equipment: bool
 
 
 class CameraCreate(BaseModel):

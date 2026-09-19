@@ -34,6 +34,10 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
+    # Role'den bagimsiz, kullaniciya ozel bir yetki: rolu "izleyici" olsa
+    # bile, bu isaretliyse Is Makinasi Takip ozelligini acip kapatabilir.
+    can_manage_equipment: Mapped[bool] = mapped_column(default=False)
+
 
 class RelayType(str, enum.Enum):
     NONE = "none"

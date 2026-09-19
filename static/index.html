@@ -17,6 +17,7 @@
       <button class="tab-btn" data-tab="logs">Kayitlar</button>
       <button class="tab-btn" data-tab="reports">Raporlar</button>
       <button class="tab-btn" data-tab="equipment" id="equipment-tab-btn" style="display:none;">Is Makinasi Takip</button>
+      <button class="tab-btn" data-tab="users" id="users-tab-btn" style="display:none;">Kullanicilar</button>
     </nav>
     <label id="equipment-toggle-wrap" class="equipment-toggle" style="display:none;">
       <input type="checkbox" id="equipment-toggle">
@@ -227,6 +228,27 @@
       </form>
       <table class="data-table" id="equipment-time-report-table">
         <thead><tr><th>Plaka</th><th>Konum</th><th>Sure</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section id="tab-users" class="tab-panel">
+      <h2>Kullanicilar</h2>
+      <form id="user-form" class="inline-form">
+        <input type="text" id="user-username" placeholder="Kullanici adi" required>
+        <input type="password" id="user-password" placeholder="Sifre" required>
+        <select id="user-role">
+          <option value="viewer">Izleyici</option>
+          <option value="admin">Yonetici</option>
+        </select>
+        <label class="equipment-toggle">
+          <input type="checkbox" id="user-can-manage-equipment">
+          Is Makinasi Takibini Acip Kapatabilir
+        </label>
+        <button type="submit">Ekle</button>
+      </form>
+      <table class="data-table" id="user-table">
+        <thead><tr><th>Kullanici Adi</th><th>Rol</th><th>Is Makinasi Yetkisi</th><th>Eklenme</th><th></th></tr></thead>
         <tbody></tbody>
       </table>
     </section>

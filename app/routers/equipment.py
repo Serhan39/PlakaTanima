@@ -30,7 +30,7 @@ from app.schemas import (
     EquipmentZoneRead,
     FeatureFlag,
 )
-from app.security import get_current_user, require_roles
+from app.security import get_current_user, require_equipment_permission, require_roles
 from app.settings_store import get_setting, set_setting
 from app.vision.pipeline import build_default_detector, recognize_equipment_codes
 from app.websocket_manager import broadcast_equipment_event
@@ -56,7 +56,7 @@ def feature_status(db: Session = Depends(get_db), _: User = Depends(get_current_
     return FeatureFlag(enabled=enabled)
 
 
-@router.put("/feature-status", response_model=FeatureFlag, dependencies=[Depends(require_roles(UserRole.ADMIN))])
+@router.put("/feature-status", response_model=FeatureFlag, dependencies=[Depends(require_equipment_permission)])
 def set_feature_status(payload: FeatureFlag, db: Session = Depends(get_db)):
     set_setting(db, _FEATURE_KEY, "true" if payload.enabled else "false")
     return payload

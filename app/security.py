@@ -57,3 +57,12 @@ def require_roles(*roles: UserRole):
         return user
 
     return dependency
+
+
+def require_equipment_permission(user: User = Depends(get_current_user)) -> User:
+    """Yoneticiler her zaman yetkilidir; digerleri sadece kendilerine ozel
+    olarak (rolunden bagimsiz) can_manage_equipment isaretlenmisse Is
+    Makinasi Takip ozelligini acip kapatabilir."""
+    if user.role != UserRole.ADMIN and not user.can_manage_equipment:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bu islem icin yetkiniz yok")
+    return user
