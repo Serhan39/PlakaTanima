@@ -5,6 +5,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 
 from app.database import Base, engine
+from app.migrations import run_light_migrations
 from app.routers import auth, cameras, detect, equipment, logs, parking, reports, users, watchlist
 from app.scheduler import daily_report_loop
 from app.websocket_manager import equipment_manager, manager
@@ -13,6 +14,7 @@ from app.websocket_manager import equipment_manager, manager
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
+    run_light_migrations(engine, Base)
     task = asyncio.create_task(daily_report_loop())
     yield
     task.cancel()

@@ -205,6 +205,17 @@ Diğer komutlar: `make down` (durdur), `make logs` (canlı log), `make test`
 (birim testleri), `make package` (aşağıdaki internetsiz kurulum paketini
 oluşturur).
 
+## Güncelleme Sonrası Veri Kaybı Olmaz (Otomatik Şema Güncellemesi)
+
+`git pull` + `docker compose up -d --build` ile yeni bir sürüme geçtiğinizde,
+uygulama açılışta veritabanı şemasını otomatik kontrol eder ve yeni
+sürümde eklenmiş ama sizin veritabanınızda henüz bulunmayan sütunları
+kendiliğinden ekler (`app/migrations.py`). Böylece mevcut kullanıcılar,
+izleme listesi, kamera/geçit tanımları, tespit kayıtları vb. veriler
+korunur; veritabanını silip sıfırdan kurmanıza gerek kalmaz. Bu mekanizma
+her başlangıçta çalışır ve şema zaten güncelse hiçbir şey yapmaz
+(idempotent).
+
 ## İnternetsiz (Air-Gapped) Kurulum
 
 Ürün, imaj **bir kez internetli bir makinede derlendikten sonra** hiçbir
