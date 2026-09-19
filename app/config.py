@@ -15,6 +15,21 @@ class Settings(BaseSettings):
     company_name: str = "Sertek Bilisim"
     ocr_engine: str = "tesseract"
 
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    smtp_use_tls: bool = True
+
+    alert_categories: str = "wanted,blacklist"
+    alert_to: str = ""
+
+    daily_report_to: str = ""
+    daily_report_hour: int = 8
+
+    parking_capacity: int = 50
+
 
 @lru_cache
 def get_settings() -> Settings:

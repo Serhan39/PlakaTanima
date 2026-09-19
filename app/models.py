@@ -35,6 +35,19 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
+class RelayType(str, enum.Enum):
+    NONE = "none"
+    HTTP = "http"
+    TCP = "tcp"
+    MODBUS_TCP = "modbus_tcp"
+
+
+class CameraDirection(str, enum.Enum):
+    NONE = "none"
+    ENTRY = "entry"
+    EXIT = "exit"
+
+
 class Camera(Base):
     __tablename__ = "cameras"
 
@@ -44,6 +57,13 @@ class Camera(Base):
     rtsp_url: Mapped[str] = mapped_column(String(512))
     is_active: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    relay_type: Mapped[RelayType] = mapped_column(Enum(RelayType), default=RelayType.NONE)
+    relay_target: Mapped[str] = mapped_column(String(255), default="")
+    relay_command: Mapped[str] = mapped_column(String(255), default="")
+    relay_pulse_seconds: Mapped[float] = mapped_column(Float, default=3.0)
+    open_categories: Mapped[str] = mapped_column(String(255), default="allowed,staff")
+    direction: Mapped[CameraDirection] = mapped_column(Enum(CameraDirection), default=CameraDirection.NONE)
 
 
 class WatchlistEntry(Base):
@@ -71,3 +91,34 @@ class DetectionLog(Base):
     detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
 
     camera: Mapped["Camera"] = relationship()
+
+
+class RelayEventLog(Base):
+    __tablename__ = "relay_event_logs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    camera_id: Mapped[int | None] = mapped_column(ForeignKey("cameras.id"), nullable=True)
+    triggered_by: Mapped[str] = mapped_column(String(32), default="detection")
+    success: Mapped[bool] = mapped_column(default=False)
+    message: Mapped[str] = mapped_column(String(512), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
+
+
+class ParkingState(Base):
+    """Su an otoparkin icinde oldugu varsayilan araclar. Giris kamerasinda
+    tespit edilince eklenir, cikis kamerasinda tespit edilince silinir.
+    Satir sayisi = o an icerideki arac sayisi."""
+
+    __tablename__ = "parking_state"
+
+    plate_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    plate_encrypted: Mapped[str] = mapped_column(String(512))
+    camera_id: Mapped[int | None] = mapped_column(ForeignKey("cameras.id"), nullable=True)
+    entered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class AppSetting(Base):
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(String(255))

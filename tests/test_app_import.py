@@ -14,5 +14,19 @@ def test_app_is_fastapi_instance():
 
 def test_expected_routes_registered():
     paths = {route.path for route in app.routes}
-    for expected in ["/api/auth/login", "/api/watchlist", "/api/cameras", "/api/detect/image", "/api/logs", "/ws/alerts"]:
+    for expected in [
+        "/api/auth/login",
+        "/api/watchlist",
+        "/api/cameras",
+        "/api/cameras/{camera_id}/test-relay",
+        "/api/detect/image",
+        "/api/logs",
+        "/api/reports/summary",
+        "/api/reports/logs",
+        "/api/reports/export.csv",
+        "/api/reports/send-daily",
+        "/api/parking/status",
+        "/api/parking/capacity",
+        "/ws/alerts",
+    ]:
         assert expected in paths

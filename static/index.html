@@ -14,6 +14,7 @@
       <button class="tab-btn" data-tab="watchlist">Izleme Listesi</button>
       <button class="tab-btn" data-tab="cameras">Kameralar</button>
       <button class="tab-btn" data-tab="logs">Kayitlar</button>
+      <button class="tab-btn" data-tab="reports">Raporlar</button>
     </nav>
     <button id="logout-btn" class="ghost-btn">Cikis</button>
   </header>
@@ -22,6 +23,17 @@
     <section id="tab-live" class="tab-panel active">
       <h2>Canli Tespitler</h2>
       <div id="live-status" class="status-pill">Baglaniyor...</div>
+
+      <div class="parking-widget" id="parking-widget">
+        <div class="parking-numbers">
+          <span id="parking-inside">-</span> / <span id="parking-capacity">-</span>
+          <span class="parking-label">arac icerde</span>
+        </div>
+        <div class="parking-bar"><div class="parking-bar-fill" id="parking-bar-fill"></div></div>
+        <div class="parking-percent" id="parking-percent">-</div>
+        <button id="parking-capacity-btn" class="ghost-btn">Kapasiteyi Duzenle</button>
+      </div>
+
       <div id="live-feed" class="detection-list"></div>
     </section>
 
@@ -50,10 +62,32 @@
         <input type="text" id="cam-name" placeholder="Kamera adi (Ana Giris)" required>
         <input type="text" id="cam-location" placeholder="Konum">
         <input type="text" id="cam-rtsp" placeholder="rtsp://..." required>
+        <select id="cam-direction">
+          <option value="none">Yon: Yok (sayilmaz)</option>
+          <option value="entry">Yon: Giris</option>
+          <option value="exit">Yon: Cikis</option>
+        </select>
         <button type="submit">Ekle</button>
       </form>
+      <p class="hint">Otopark doluluk sayaci icin: giris kamerasini "Giris", cikis kamerasini "Cikis" olarak isaretleyin.</p>
+
+      <h3>Role / I-O Karti Ayarlari (opsiyonel)</h3>
+      <p class="hint">Plaka asagidaki kategorilerden biriyle eslesince bariyereye/dis uniteye otomatik acik sinyali gonderilir. Bos birakirsaniz role tetiklenmez, sadece kamerayi ekler.</p>
+      <form id="relay-config-form" class="inline-form">
+        <select id="relay-type">
+          <option value="none">Role Yok</option>
+          <option value="http">HTTP</option>
+          <option value="tcp">TCP (ham komut)</option>
+          <option value="modbus_tcp">Modbus TCP</option>
+        </select>
+        <input type="text" id="relay-target" placeholder="Hedef (URL veya ip:port)">
+        <input type="text" id="relay-command" placeholder="Komut / coil adresi">
+        <input type="number" id="relay-pulse" placeholder="Acik kalma (sn)" value="3" min="0" step="0.5">
+        <input type="text" id="relay-categories" placeholder="Tetikleyen kategoriler" value="allowed,staff">
+      </form>
+
       <table class="data-table" id="camera-table">
-        <thead><tr><th>Ad</th><th>Konum</th><th>RTSP</th><th>Durum</th><th></th></tr></thead>
+        <thead><tr><th>Ad</th><th>Konum</th><th>RTSP</th><th>Durum</th><th>Yon</th><th>Role</th><th></th></tr></thead>
         <tbody></tbody>
       </table>
     </section>
@@ -61,6 +95,37 @@
     <section id="tab-logs" class="tab-panel">
       <h2>Tespit Kayitlari</h2>
       <table class="data-table" id="logs-table">
+        <thead><tr><th>Plaka</th><th>Guven</th><th>Eslesme</th><th>Kamera</th><th>Tarih</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section id="tab-reports" class="tab-panel">
+      <h2>Raporlar</h2>
+      <form id="report-filter-form" class="inline-form">
+        <label>Baslangic <input type="datetime-local" id="rp-from"></label>
+        <label>Bitis <input type="datetime-local" id="rp-to"></label>
+        <select id="rp-camera"><option value="">Tum Kameralar</option></select>
+        <select id="rp-category">
+          <option value="">Tum Kategoriler</option>
+          <option value="allowed">Izinli</option>
+          <option value="staff">Personel</option>
+          <option value="wanted">Aranan</option>
+          <option value="blacklist">Kara Liste</option>
+        </select>
+        <input type="text" id="rp-plate" placeholder="Plaka ara">
+        <button type="submit">Filtrele</button>
+      </form>
+
+      <div class="report-summary" id="report-summary"></div>
+
+      <div class="inline-form">
+        <a id="rp-export-btn" class="ghost-btn" href="#" target="_blank">CSV Indir</a>
+        <button id="rp-send-daily-btn" class="ghost-btn" type="button">Gunluk Raporu Simdi Gonder (Test)</button>
+        <span id="rp-send-daily-result"></span>
+      </div>
+
+      <table class="data-table" id="report-table">
         <thead><tr><th>Plaka</th><th>Guven</th><th>Eslesme</th><th>Kamera</th><th>Tarih</th></tr></thead>
         <tbody></tbody>
       </table>

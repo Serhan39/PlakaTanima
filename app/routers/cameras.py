@@ -2,8 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Camera, User, UserRole
-from app.schemas import CameraCreate, CameraRead
+from app.models import Camera, RelayEventLog, User, UserRole
+from app.outputs.relay import build_relay_driver
+from app.schemas import CameraCreate, CameraRead, RelayTestResult
 from app.security import get_current_user, require_roles
 
 router = APIRouter(prefix="/api/cameras", tags=["cameras"])
@@ -30,3 +31,21 @@ def delete_camera(camera_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Kamera bulunamadi")
     db.delete(camera)
     db.commit()
+
+
+@router.post(
+    "/{camera_id}/test-relay",
+    response_model=RelayTestResult,
+    dependencies=[Depends(require_roles(UserRole.ADMIN, UserRole.OPERATOR))],
+)
+def test_relay(camera_id: int, db: Session = Depends(get_db)):
+    camera = db.get(Camera, camera_id)
+    if not camera:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Kamera bulunamadi")
+
+    driver = build_relay_driver(camera)
+    success, message = driver.trigger_open(camera.relay_pulse_seconds)
+
+    db.add(RelayEventLog(camera_id=camera.id, triggered_by="manual", success=success, message=message))
+    db.commit()
+    return RelayTestResult(success=success, message=message)

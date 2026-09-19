@@ -26,6 +26,18 @@ ilham alındığı ve lisans/AGPL riskinin nasıl yönetildiği).
   JWT tabanlı oturum.
 - **Canlı web paneli** — WebSocket ile anlık tespit akışı, izleme listesi
   ve kamera yönetimi, tespit kayıt geçmişi.
+- **Raporlama** — tarih/kamera/kategori/plaka bazlı filtrelenebilir olay
+  raporu, özet istatistik kartları, CSV dışa aktarma.
+- **E-posta bildirimleri** — aranan/kara liste plakası görülünce anlık
+  uyarı e-postası, her gün otomatik gönderilen günlük özet rapor
+  (SMTP yapılandırılmazsa özellik sessizce devre dışı kalır).
+- **I/O kart (röle) entegrasyonu** — kamera başına yapılandırılabilir,
+  plaka izinli/personel listesiyle eşleşince bariyere/dış üniteye HTTP,
+  ham TCP veya Modbus TCP üzerinden açık sinyali gönderir. Panelden
+  "Röleyi Test Et" ile donanım gerçek bir kamera olmadan da denenebilir.
+- **Otopark doluluk takibi** — kameraları "Giriş"/"Çıkış" olarak
+  işaretleyerek o an içeride kaç araç olduğunu ve doluluk oranını canlı
+  panelde gösterir.
 - **Docker Compose ile tek komutla kurulum** — API + arka plan kamera
   worker'ı ayrı konteynerlerde, yatayda ölçeklenebilir.
 
@@ -84,6 +96,46 @@ yalnızca geliştirme ortamında kullanılmalı, ürünle birlikte dağıtılan
 \* İnternetsiz kurulumda EasyOCR kullanmayın; ya Tesseract'ta kalın ya da
 model ağırlıklarını Docker imajını **derlerken** (internet varken) önceden
 indirip imaja gömün.
+
+## Röle / I-O Kart Entegrasyonu
+
+Kameralar sekmesinde her kamera icin bagimsiz bir role yapilandirilabilir:
+
+| Tip | Hedef alani | Komut alani | Aciklama |
+|---|---|---|---|
+| HTTP | Tam URL (`http://192.168.1.50/open`) | - | Cogu ag tabanli bariyer kartinda hazir bir HTTP tetikleme adresi olur |
+| TCP | `ip:port` | Ham metin komutu (orn. `REL1ON\r\n`) | Kart ureticisinin dokumantasyonundaki komutu birebir yazin |
+| Modbus TCP | `ip:port` (port bos ise 502) | Coil (bobin) adresi, orn. `0` | Fonksiyon kodu 0x05 (Write Single Coil) kullanilir |
+
+"Tetikleyen kategoriler" alanina (varsayilan `allowed,staff`) hangi izleme
+listesi kategorisinde role acilacagini yazin. Donaniminiz henuz kurulu
+degilse veya kamera yoksa, "Röleyi Test Et" butonuyla API'nin donanima
+ulasip ulasamadigini kamerasiz da deneyebilirsiniz.
+
+## Raporlama ve E-posta Bildirimleri
+
+**Raporlar** sekmesinden tarih araligi, kamera, kategori ve plakaya gore
+filtrelenebilir bir olay listesi, ozet sayilar ve CSV disa aktarma
+kullanilabilir. E-posta bildirimleri icin `.env` icindeki `SMTP_*`
+degiskenlerini doldurun:
+
+- `ALERT_CATEGORIES` + `ALERT_TO`: bu kategoride bir plaka gorulunce aninda
+  uyari e-postasi gonderilir (varsayilan: aranan ve kara liste).
+- `DAILY_REPORT_TO` + `DAILY_REPORT_HOUR`: her gun belirtilen saatte otomatik
+  gunluk ozet raporu gonderilir. `DAILY_REPORT_TO` bos birakilirsa gunluk
+  rapor gonderilmez. Panelden "Gunluk Raporu Simdi Gonder" ile test edilebilir.
+
+`SMTP_HOST` bos birakilirsa e-posta ozelligi sessizce devre disi kalir,
+sistemin geri kalani etkilenmez.
+
+## Otopark Doluluk Takibi
+
+Kameralar sekmesinde bir kamerayi "Giris", bir digerini "Cikis" olarak
+isaretleyin. Giris kamerasinda tespit edilen her plaka "icerde" sayilir,
+cikis kamerasinda tespit edilince listeden dusurulur. Canli Tespitler
+sekmesindeki widget o an icerideki arac sayisini ve doluluk yuzdesini
+gosterir; kapasite `PARKING_CAPACITY` ile (veya panelden "Kapasiteyi
+Duzenle" ile, kalici olarak veritabaninda) ayarlanir.
 
 ## Kurulum
 
@@ -194,7 +246,8 @@ kurulum olarak anahtar teslim sunulabilir.
 
 1. Gerçek bir Türk plakası veri setiyle YOLO modeli eğitip ONNX'e aktarma
    (demo Haar cascade motorunun yerine).
-2. Bariyer/kapı kontrol sistemleriyle (Wiegand/röle) donanım entegrasyonu.
+2. Wiegand/kart okuyucu gibi ek erişim kontrol donanımlarıyla entegrasyon
+   (HTTP/TCP/Modbus röle entegrasyonu zaten mevcut, bkz. yukarıda).
 3. Mobil uygulama (güvenlik görevlisi için anlık bildirim).
 4. Çoklu şube/merkezi izleme için bulut SaaS sürümü.
 5. Araç tipi, renk ve marka tanıma gibi ek analiz modülleri (üst segment
