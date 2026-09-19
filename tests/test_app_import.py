@@ -27,6 +27,12 @@ def test_expected_routes_registered():
         "/api/reports/send-daily",
         "/api/parking/status",
         "/api/parking/capacity",
+        "/api/equipment/feature-status",
+        "/api/equipment/zones",
+        "/api/equipment/gates",
+        "/api/equipment/status",
+        "/api/equipment/detect/image",
         "/ws/alerts",
+        "/ws/equipment",
     ]:
         assert expected in paths

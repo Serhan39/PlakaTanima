@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.models import CameraDirection, RelayType, UserRole, WatchlistCategory
 
@@ -97,3 +97,58 @@ class ParkingStatus(BaseModel):
 
 class ParkingCapacityUpdate(BaseModel):
     capacity: int
+
+
+class FeatureFlag(BaseModel):
+    enabled: bool
+
+
+class EquipmentZoneCreate(BaseModel):
+    name: str
+
+
+class EquipmentZoneRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    name: str
+    created_at: datetime
+
+
+class EquipmentGateCreate(BaseModel):
+    name: str
+    rtsp_url: str = ""
+    zone_id: int
+    direction: CameraDirection
+
+    @field_validator("direction")
+    @classmethod
+    def direction_must_be_entry_or_exit(cls, value: CameraDirection) -> CameraDirection:
+        if value == CameraDirection.NONE:
+            raise ValueError("Kapi yonu 'entry' veya 'exit' olmalidir")
+        return value
+
+
+class EquipmentGateRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    name: str
+    rtsp_url: str
+    zone_id: int
+    direction: CameraDirection
+    is_active: bool
+
+
+class EquipmentStatusRead(BaseModel):
+    plate: str
+    zone_id: int | None
+    zone_name: str
+    updated_at: datetime
+
+
+class EquipmentCrossingRead(BaseModel):
+    plate: str
+    gate_id: int
+    zone_id: int
+    direction: CameraDirection
+    confidence: float
+    created_at: datetime

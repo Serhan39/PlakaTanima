@@ -8,25 +8,32 @@ from app.plate_utils import is_valid_turkish_plate, normalize_plate
 _ALLOWED_CHARS = "ABCDEFGHIJKLMNOPRSTUVYZ0123456789"
 
 
-def _best_candidate(raw_texts_with_conf: list[tuple[str, float]]) -> tuple[str, float]:
+def _best_candidate(raw_texts_with_conf: list[tuple[str, float]], strict: bool = True) -> tuple[str, float]:
     if not raw_texts_with_conf:
         return "", 0.0
 
-    best_text, best_conf = "", 0.0
-    for text, conf in raw_texts_with_conf:
-        candidate = normalize_plate(text)
-        if is_valid_turkish_plate(candidate) and conf > best_conf:
-            best_text, best_conf = candidate, conf
+    if strict:
+        best_text, best_conf = "", 0.0
+        for text, conf in raw_texts_with_conf:
+            candidate = normalize_plate(text)
+            if is_valid_turkish_plate(candidate) and conf > best_conf:
+                best_text, best_conf = candidate, conf
 
-    if best_text:
-        return best_text, best_conf
+        if best_text:
+            return best_text, best_conf
 
-    combined = normalize_plate("".join(text for text, _ in raw_texts_with_conf))
-    avg_conf = sum(conf for _, conf in raw_texts_with_conf) / len(raw_texts_with_conf)
-    return combined, avg_conf
+        combined = normalize_plate("".join(text for text, _ in raw_texts_with_conf))
+        avg_conf = sum(conf for _, conf in raw_texts_with_conf) / len(raw_texts_with_conf)
+        return combined, avg_conf
+
+    # Gevsek mod: Turkiye plaka formatina zorlamadan, en guvenilir/en uzun
+    # metin blogunu secer. Fabrika ici is makinelerine ozel, standart plaka
+    # kurallarina uymayan etiketler/kodlar icin kullanilir.
+    text, conf = max(raw_texts_with_conf, key=lambda c: (c[1], len(c[0])))
+    return normalize_plate(text), conf
 
 
-def _read_with_tesseract(plate_crop: np.ndarray) -> tuple[str, float]:
+def _read_with_tesseract(plate_crop: np.ndarray, strict: bool = True) -> tuple[str, float]:
     """Tamamen cevrimdisi calisir: tesseract binary'si (apt: tesseract-ocr,
     tesseract-ocr-tur) sistemde kurulu olmali; herhangi bir model internetten
     indirilmez. Varsayilan OCR motoru budur (bkz. OCR_ENGINE=tesseract)."""
@@ -41,7 +48,7 @@ def _read_with_tesseract(plate_crop: np.ndarray) -> tuple[str, float]:
         for text, conf in zip(data["text"], data["conf"])
         if text.strip() and float(conf) >= 0
     ]
-    return _best_candidate(candidates)
+    return _best_candidate(candidates, strict=strict)
 
 
 @lru_cache
@@ -55,13 +62,22 @@ def _easyocr_reader():
     return easyocr.Reader(["en"], gpu=False, verbose=False)
 
 
-def _read_with_easyocr(plate_crop: np.ndarray) -> tuple[str, float]:
+def _read_with_easyocr(plate_crop: np.ndarray, strict: bool = True) -> tuple[str, float]:
     results = _easyocr_reader().readtext(plate_crop, allowlist=_ALLOWED_CHARS, detail=1)
-    return _best_candidate([(text, conf) for _, text, conf in results])
+    return _best_candidate([(text, conf) for _, text, conf in results], strict=strict)
 
 
 def read_plate_text(plate_crop: np.ndarray) -> tuple[str, float]:
     engine = get_settings().ocr_engine
     if engine == "easyocr":
-        return _read_with_easyocr(plate_crop)
-    return _read_with_tesseract(plate_crop)
+        return _read_with_easyocr(plate_crop, strict=True)
+    return _read_with_tesseract(plate_crop, strict=True)
+
+
+def read_equipment_code(plate_crop: np.ndarray) -> tuple[str, float]:
+    """Turkiye plaka format zorunlulugu olmadan, serbest metin okur. Fabrika
+    ici is makinesi/ekipman etiketleri icin kullanilir (bkz. app/routers/equipment.py)."""
+    engine = get_settings().ocr_engine
+    if engine == "easyocr":
+        return _read_with_easyocr(plate_crop, strict=False)
+    return _read_with_tesseract(plate_crop, strict=False)

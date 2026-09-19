@@ -30,6 +30,9 @@ class Settings(BaseSettings):
 
     parking_capacity: int = 50
 
+    equipment_crossing_debounce_seconds: int = 30
+    equipment_min_code_length: int = 3
+
 
 @lru_cache
 def get_settings() -> Settings:

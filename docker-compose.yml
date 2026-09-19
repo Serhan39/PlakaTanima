@@ -20,3 +20,14 @@ services:
     depends_on:
       - api
     restart: unless-stopped
+
+  equipment-worker:
+    image: sertek-alpr:latest
+    build: .
+    command: ["python", "-m", "app.equipment_gate_worker"]
+    env_file: .env
+    environment:
+      API_BASE_URL: "http://api:8000"
+    depends_on:
+      - api
+    restart: unless-stopped

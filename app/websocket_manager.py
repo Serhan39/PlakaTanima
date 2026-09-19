@@ -22,7 +22,12 @@ class ConnectionManager:
 
 
 manager = ConnectionManager()
+equipment_manager = ConnectionManager()
 
 
 async def broadcast_detection(message: dict) -> None:
     await manager.broadcast(message)
+
+
+async def broadcast_equipment_event(message: dict) -> None:
+    await equipment_manager.broadcast(message)

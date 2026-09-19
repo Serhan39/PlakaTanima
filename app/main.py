@@ -5,9 +5,9 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 
 from app.database import Base, engine
-from app.routers import auth, cameras, detect, logs, parking, reports, users, watchlist
+from app.routers import auth, cameras, detect, equipment, logs, parking, reports, users, watchlist
 from app.scheduler import daily_report_loop
-from app.websocket_manager import manager
+from app.websocket_manager import equipment_manager, manager
 
 
 @asynccontextmanager
@@ -28,6 +28,7 @@ app.include_router(detect.router)
 app.include_router(logs.router)
 app.include_router(reports.router)
 app.include_router(parking.router)
+app.include_router(equipment.router)
 
 
 @app.websocket("/ws/alerts")
@@ -38,6 +39,16 @@ async def alerts_socket(websocket: WebSocket):
             await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(websocket)
+
+
+@app.websocket("/ws/equipment")
+async def equipment_socket(websocket: WebSocket):
+    await equipment_manager.connect(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        equipment_manager.disconnect(websocket)
 
 
 app.mount("/", StaticFiles(directory="static", html=True), name="static")

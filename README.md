@@ -137,6 +137,33 @@ sekmesindeki widget o an icerideki arac sayisini ve doluluk yuzdesini
 gosterir; kapasite `PARKING_CAPACITY` ile (veya panelden "Kapasiteyi
 Duzenle" ile, kalici olarak veritabaninda) ayarlanir.
 
+## Is Makinasi Takip (opsiyonel, varsayilan gizli)
+
+Birden fazla alana (fabrika ici bolge) sahip tesisler icin: her alanin
+giris/cikis kapisina bir kamera takilir, is makinesinin uzerine firmanin
+kendi bastiracagi ozel bir kod/etiket konur. Bu ozellik standart Turkiye
+plaka formatini **zorunlu kilmaz** — OCR, herhangi bir alfanumerik kodu
+(en az `EQUIPMENT_MIN_CODE_LENGTH` karakter) kabul eder.
+
+- **Varsayilan olarak gizlidir.** Sekme, sadece bir yonetici panelin sag
+  ust kosesindeki "Is Makinasi Takip" onay kutusunu isaretleyip ozelligi
+  acana kadar hicbir kullaniciya gorunmez.
+- **Alan (Zone)**: adlandirilmis bolgeler (orn. "A Alani", "B Alani").
+- **Kapi (Gate)**: bir alana bagli, "Giris" veya "Cikis" olarak
+  isaretlenmis kamera konumu. Cikis kapisindan okunan bir kod "disarida"
+  durumuna, giris kapisindan okunan kod ilgili alanin durumuna gecer.
+- **Yanlis alarm onleme**: ayni kod/kapi icin `EQUIPMENT_CROSSING_DEBOUNCE_SECONDS`
+  (varsayilan 30sn) icinde tekrar eden okumalar tek bir gecis sayilir —
+  yani durum, kameranin her okuma yapmasina degil, kapidan fiilen bir kez
+  gecilmis olmasina gore guncellenir.
+- Canli Izleme paneli "ABCD plakali arac B alaninda" / "... disarida" gibi
+  mesajlari aninda WebSocket ile gosterir; Guncel Durum tablosu tum
+  makinelerin son bilinen konumunu listeler.
+- Kapi kameralarindan goruntu almak icin `app/equipment_gate_worker.py`
+  kullanilir (docker-compose icinde `equipment-worker` servisi olarak
+  hazir gelir, `.env` icinde `EQUIPMENT_WORKER_USERNAME`/`_PASSWORD`
+  doldurulmadan calismaz, hata vermeden bekler).
+
 ## Kurulum
 
 ```bash

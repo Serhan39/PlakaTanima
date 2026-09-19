@@ -66,6 +66,7 @@ function initDashboard() {
   setupCameras();
   setupReports();
   setupParkingWidget();
+  setupEquipmentTracking();
   loadLogs();
   connectLiveFeed();
 }
@@ -77,6 +78,7 @@ function switchTab(tab) {
   if (tab === "cameras") loadCameras();
   if (tab === "logs") loadLogs();
   if (tab === "reports") loadReportCameraOptions().then(loadReports);
+  if (tab === "equipment") { loadZones(); loadGates(); loadEquipmentStatus(); }
 }
 
 function setupWatchlist() {
@@ -360,4 +362,171 @@ async function loadParkingStatus() {
   } catch (err) {
     // canli akis sekmesindeyken sessizce yoksay, oturum sona ermisse apiFetch zaten yonlendirir
   }
+}
+
+async function setupEquipmentTracking() {
+  const toggleWrap = document.getElementById("equipment-toggle-wrap");
+  const toggle = document.getElementById("equipment-toggle");
+  const tabBtn = document.getElementById("equipment-tab-btn");
+
+  if (getRole() === "admin") {
+    toggleWrap.style.display = "flex";
+    toggle.addEventListener("change", async () => {
+      try {
+        await apiFetch("/api/equipment/feature-status", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ enabled: toggle.checked }),
+        });
+        tabBtn.style.display = toggle.checked ? "" : "none";
+        if (!toggle.checked && document.getElementById("tab-equipment").classList.contains("active")) {
+          switchTab("live");
+        }
+      } catch (err) {
+        alert(err.message);
+        toggle.checked = !toggle.checked;
+      }
+    });
+  }
+
+  try {
+    const status = await apiFetch("/api/equipment/feature-status");
+    tabBtn.style.display = status.enabled ? "" : "none";
+    if (toggle) toggle.checked = status.enabled;
+  } catch (err) {
+    // sessizce yoksay
+  }
+
+  document.getElementById("zone-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const name = document.getElementById("zone-name").value;
+    try {
+      await apiFetch("/api/equipment/zones", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      event.target.reset();
+      loadZones();
+    } catch (err) {
+      alert(err.message);
+    }
+  });
+
+  document.getElementById("gate-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const name = document.getElementById("gate-name").value;
+    const rtsp_url = document.getElementById("gate-rtsp").value;
+    const zone_id = parseInt(document.getElementById("gate-zone").value, 10);
+    const direction = document.getElementById("gate-direction").value;
+    if (!zone_id) {
+      alert("Once bir alan ekleyin");
+      return;
+    }
+    try {
+      await apiFetch("/api/equipment/gates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, rtsp_url, zone_id, direction }),
+      });
+      event.target.reset();
+      loadGates();
+    } catch (err) {
+      alert(err.message);
+    }
+  });
+
+  loadZones();
+  connectEquipmentLiveFeed();
+}
+
+async function loadZones() {
+  const zones = await apiFetch("/api/equipment/zones");
+  const tbody = document.querySelector("#zone-table tbody");
+  tbody.innerHTML = zones
+    .map((z) => `<tr><td>${z.name}</td><td><button onclick="deleteZone(${z.id})">Sil</button></td></tr>`)
+    .join("");
+
+  const select = document.getElementById("gate-zone");
+  const currentValue = select.value;
+  select.innerHTML = zones.map((z) => `<option value="${z.id}">${z.name}</option>`).join("");
+  if (currentValue) select.value = currentValue;
+}
+
+async function deleteZone(id) {
+  if (!confirm("Bu alani silmek istediginize emin misiniz?")) return;
+  try {
+    await apiFetch(`/api/equipment/zones/${id}`, { method: "DELETE" });
+    loadZones();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+async function loadGates() {
+  const [gates, zones] = await Promise.all([apiFetch("/api/equipment/gates"), apiFetch("/api/equipment/zones")]);
+  const zoneNames = Object.fromEntries(zones.map((z) => [z.id, z.name]));
+  const tbody = document.querySelector("#gate-table tbody");
+  tbody.innerHTML = gates
+    .map(
+      (g) => `<tr>
+        <td>${g.name}</td>
+        <td>${zoneNames[g.zone_id] || "-"}</td>
+        <td>${DIRECTION_LABELS[g.direction] || g.direction}</td>
+        <td>${g.rtsp_url || "-"}</td>
+        <td><button onclick="deleteGate(${g.id})">Sil</button></td>
+      </tr>`
+    )
+    .join("");
+}
+
+async function deleteGate(id) {
+  if (!confirm("Bu kapiyi silmek istediginize emin misiniz?")) return;
+  try {
+    await apiFetch(`/api/equipment/gates/${id}`, { method: "DELETE" });
+    loadGates();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+async function loadEquipmentStatus() {
+  const rows = await apiFetch("/api/equipment/status");
+  const tbody = document.querySelector("#equipment-status-table tbody");
+  tbody.innerHTML = rows
+    .map(
+      (r) => `<tr>
+        <td>${r.plate}</td>
+        <td>${r.zone_name}</td>
+        <td>${new Date(r.updated_at).toLocaleString("tr-TR")}</td>
+      </tr>`
+    )
+    .join("");
+}
+
+function connectEquipmentLiveFeed() {
+  const statusEl = document.getElementById("equipment-live-status");
+  const feedEl = document.getElementById("equipment-live-feed");
+  const proto = window.location.protocol === "https:" ? "wss" : "ws";
+  const socket = new WebSocket(`${proto}://${window.location.host}/ws/equipment`);
+
+  socket.onopen = () => {
+    statusEl.textContent = "Bagli";
+    statusEl.classList.add("online");
+  };
+  socket.onclose = () => {
+    statusEl.textContent = "Baglanti kesildi";
+    statusEl.classList.remove("online");
+  };
+  socket.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    (data.events || []).forEach((e) => {
+      const item = document.createElement("div");
+      item.className = `detection-item ${e.direction === "exit" ? "exit" : "entry"}`;
+      item.innerHTML = `<strong>${e.message}</strong><span>%${Math.round(e.confidence * 100)}</span>`;
+      feedEl.prepend(item);
+      while (feedEl.children.length > 30) feedEl.removeChild(feedEl.lastChild);
+    });
+    if ((data.events || []).length > 0) loadEquipmentStatus();
+  };
 }

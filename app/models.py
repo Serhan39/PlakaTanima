@@ -122,3 +122,57 @@ class AppSetting(Base):
 
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     value: Mapped[str] = mapped_column(String(255))
+
+
+class EquipmentZone(Base):
+    """Fabrika icinde is makinelerinin bulunabilecegi adlandirilmis alanlar
+    (orn. 'A Alani', 'B Alani')."""
+
+    __tablename__ = "equipment_zones"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class EquipmentGate(Base):
+    """Bir alanin girisi/cikisi olan kapiya takili kamera. direction=entry
+    ise bu kapidan gecen makine zone_id alanina girmis, direction=exit ise
+    zone_id alanindan cikip disariya gecmis sayilir."""
+
+    __tablename__ = "equipment_gates"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(128))
+    rtsp_url: Mapped[str] = mapped_column(String(512), default="")
+    zone_id: Mapped[int] = mapped_column(ForeignKey("equipment_zones.id"))
+    direction: Mapped[CameraDirection] = mapped_column(Enum(CameraDirection))
+    is_active: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    zone: Mapped["EquipmentZone"] = relationship()
+
+
+class EquipmentState(Base):
+    """Her is makinesinin (plakasina gore) su an hangi alanda oldugu.
+    zone_id NULL ise makine hicbir alanda degil (disarida) demektir."""
+
+    __tablename__ = "equipment_state"
+
+    plate_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    plate_encrypted: Mapped[str] = mapped_column(String(512))
+    zone_id: Mapped[int | None] = mapped_column(ForeignKey("equipment_zones.id"), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class EquipmentCrossingLog(Base):
+    __tablename__ = "equipment_crossing_logs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    gate_id: Mapped[int] = mapped_column(ForeignKey("equipment_gates.id"))
+    plate_encrypted: Mapped[str] = mapped_column(String(512))
+    plate_hash: Mapped[str] = mapped_column(String(64), index=True)
+    direction: Mapped[CameraDirection] = mapped_column(Enum(CameraDirection))
+    zone_id: Mapped[int] = mapped_column(ForeignKey("equipment_zones.id"))
+    confidence: Mapped[float] = mapped_column(Float, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)

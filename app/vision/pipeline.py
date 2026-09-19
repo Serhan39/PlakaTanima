@@ -8,7 +8,7 @@ from app.crypto import deterministic_hash
 from app.models import WatchlistCategory, WatchlistEntry
 from app.plate_utils import format_plate, is_valid_turkish_plate
 from app.vision.detector import HaarCascadePlateDetector, OnnxPlateDetector, PlateDetector
-from app.vision.ocr import read_plate_text
+from app.vision.ocr import read_equipment_code, read_plate_text
 
 
 @dataclass
@@ -16,6 +16,12 @@ class PipelineResult:
     plate: str
     confidence: float
     matched_category: WatchlistCategory | None
+
+
+@dataclass
+class EquipmentDetection:
+    code: str
+    confidence: float
 
 
 def build_default_detector() -> PlateDetector:
@@ -48,4 +54,21 @@ def recognize_plates(frame: np.ndarray, detector: PlateDetector, db: Session) ->
                 matched_category=match.category if match else None,
             )
         )
+    return results
+
+
+def recognize_equipment_codes(frame: np.ndarray, detector: PlateDetector, min_length: int = 3) -> list[EquipmentDetection]:
+    """Standart Turkiye plaka formatina zorlamadan, is makinesi/ekipman
+    etiketlerini okur (bkz. app/vision/ocr.py::read_equipment_code)."""
+    results: list[EquipmentDetection] = []
+    for box in detector.detect(frame):
+        crop = box.crop(frame)
+        if crop.size == 0:
+            continue
+        text, ocr_conf = read_equipment_code(crop)
+        if not text or len(text) < min_length:
+            continue
+
+        confidence = round((box.confidence + ocr_conf) / 2, 3)
+        results.append(EquipmentDetection(code=text, confidence=confidence))
     return results

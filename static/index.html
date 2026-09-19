@@ -15,7 +15,12 @@
       <button class="tab-btn" data-tab="cameras">Kameralar</button>
       <button class="tab-btn" data-tab="logs">Kayitlar</button>
       <button class="tab-btn" data-tab="reports">Raporlar</button>
+      <button class="tab-btn" data-tab="equipment" id="equipment-tab-btn" style="display:none;">Is Makinasi Takip</button>
     </nav>
+    <label id="equipment-toggle-wrap" class="equipment-toggle" style="display:none;">
+      <input type="checkbox" id="equipment-toggle">
+      Is Makinasi Takip
+    </label>
     <button id="logout-btn" class="ghost-btn">Cikis</button>
   </header>
 
@@ -127,6 +132,47 @@
 
       <table class="data-table" id="report-table">
         <thead><tr><th>Plaka</th><th>Guven</th><th>Eslesme</th><th>Kamera</th><th>Tarih</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section id="tab-equipment" class="tab-panel">
+      <h2>Is Makinasi Takip</h2>
+      <p class="hint">Fabrika icindeki adlandirilmis alanlar (A Alani, B Alani...) ve bu alanlarin giris/cikis kapilarini tanimlayin. Bir is makinesi bir alanin cikis kapisindan gecince "disarida", bir alanin giris kapisindan gecince o alanda sayilir. Ayni plaka/kapi icin kisa surede tekrar eden okumalar tek gecis sayilir (yanlis alarmi onlemek icin).</p>
+
+      <h3>Alanlar</h3>
+      <form id="zone-form" class="inline-form">
+        <input type="text" id="zone-name" placeholder="Alan adi (A Alani)" required>
+        <button type="submit">Ekle</button>
+      </form>
+      <table class="data-table" id="zone-table">
+        <thead><tr><th>Alan</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+
+      <h3>Kapilar</h3>
+      <form id="gate-form" class="inline-form">
+        <input type="text" id="gate-name" placeholder="Kapi adi (A Cikis)" required>
+        <input type="text" id="gate-rtsp" placeholder="rtsp://... (opsiyonel)">
+        <select id="gate-zone"></select>
+        <select id="gate-direction">
+          <option value="entry">Giris</option>
+          <option value="exit">Cikis</option>
+        </select>
+        <button type="submit">Ekle</button>
+      </form>
+      <table class="data-table" id="gate-table">
+        <thead><tr><th>Kapi</th><th>Alan</th><th>Yon</th><th>RTSP</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+
+      <h3>Canli Izleme</h3>
+      <div id="equipment-live-status" class="status-pill">Baglaniyor...</div>
+      <div id="equipment-live-feed" class="detection-list"></div>
+
+      <h3>Guncel Durum</h3>
+      <table class="data-table" id="equipment-status-table">
+        <thead><tr><th>Plaka</th><th>Durum</th><th>Son Guncelleme</th></tr></thead>
         <tbody></tbody>
       </table>
     </section>
