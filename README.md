@@ -95,7 +95,9 @@ make up                        # imajlari derler ve baslatir (docker compose up 
 make seed-admin PASSWORD=GucluBirSifre123
 ```
 
-Panel: `http://localhost:8000` (giriş: `admin` / belirlediğiniz şifre).
+Panel: `http://localhost:8010` (giriş: `admin` / belirlediğiniz şifre).
+Bu makinede 8010 portu da doluysa `.env` içindeki `API_PORT` değerini
+değiştirin (örn. `API_PORT=8011`).
 
 Diğer komutlar: `make down` (durdur), `make logs` (canlı log), `make test`
 (birim testleri), `make package` (aşağıdaki internetsiz kurulum paketini
