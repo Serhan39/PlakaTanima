@@ -146,9 +146,28 @@ class EquipmentGate(Base):
     name: Mapped[str] = mapped_column(String(128))
     rtsp_url: Mapped[str] = mapped_column(String(512), default="")
     zone_id: Mapped[int] = mapped_column(ForeignKey("equipment_zones.id"))
+    # direction: tabloda gosterim ve cizgi tanimlanmamis/eski tek-kare modu
+    # (/detect/image) icin varsayilan/yedek yon. Cizgi takibi (worker) aktif
+    # oldugunda gercek yon, her gecis icin ayri ayri asagidaki cizgi +
+    # icerisi referans noktasindan dinamik hesaplanir (bkz. inside_x/y).
     direction: Mapped[CameraDirection] = mapped_column(Enum(CameraDirection))
     is_active: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    # Kameranin genis bir alani gordugu kurulumlarda, aracin sadece
+    # goruntude "bulunmasini" degil, bu sanal cizgiyi fiilen gecmesini
+    # tespit etmek icin kullanilan iki uc nokta (goruntu genisligi/
+    # yuksekligine gore normalize edilmis, 0-1 araliginda).
+    line_x1: Mapped[float] = mapped_column(Float, default=0.1)
+    line_y1: Mapped[float] = mapped_column(Float, default=0.5)
+    line_x2: Mapped[float] = mapped_column(Float, default=0.9)
+    line_y2: Mapped[float] = mapped_column(Float, default=0.5)
+
+    # Cizginin hangi tarafinin "icerisi" (zone_id alani) oldugunu isaret
+    # eden referans nokta; bir aracin gectikten sonraki tarafi bu noktayla
+    # ayni tarafta ise GIRIS, degilse CIKIS sayilir (bkz. app/vision/tracker.py).
+    inside_x: Mapped[float] = mapped_column(Float, default=0.5)
+    inside_y: Mapped[float] = mapped_column(Float, default=0.1)
 
     zone: Mapped["EquipmentZone"] = relationship()
 

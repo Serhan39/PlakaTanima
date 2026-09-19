@@ -175,6 +175,24 @@
         <tbody></tbody>
       </table>
 
+      <div id="gate-line-editor" class="line-editor" style="display:none;">
+        <h4 id="gate-line-editor-title"></h4>
+        <p class="hint">
+          Kameradan alinan ornek goruntu uzerinde once <strong>gecis cizgisinin iki ucuna</strong>
+          (kirmizi noktalar) tiklayin, sonra cizginin hangi tarafinin "<strong>icerisi</strong>"
+          (yesil nokta - <span id="gate-line-zone-name"></span> alani) oldugunu isaretlemek icin
+          o tarafa tiklayin. Uc nokta tamamlaninca otomatik olarak yeniden baslar.
+        </p>
+        <canvas id="gate-line-canvas" width="640" height="360"></canvas>
+        <div class="inline-form">
+          <button id="gate-line-refresh-btn" class="ghost-btn" type="button">Goruntuyu Yenile</button>
+          <button id="gate-line-reset-btn" class="ghost-btn" type="button">Sifirla</button>
+          <button id="gate-line-save-btn" type="button">Kaydet</button>
+          <button id="gate-line-cancel-btn" class="ghost-btn" type="button">Kapat</button>
+        </div>
+        <p class="hint">Not: kaydettikten sonra degisikligin worker'a yansimasi icin <code>docker compose restart equipment-worker</code> calistirmaniz gerekir.</p>
+      </div>
+
       <h3>Canli Izleme</h3>
       <div id="equipment-live-status" class="status-pill">Baglaniyor...</div>
       <div id="equipment-live-feed" class="detection-list"></div>

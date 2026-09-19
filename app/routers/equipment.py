@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import cv2
 import numpy as np
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -19,7 +19,9 @@ from app.models import (
 )
 from app.schemas import (
     EquipmentCrossingRead,
+    EquipmentCrossingSubmit,
     EquipmentGateCreate,
+    EquipmentGateLineUpdate,
     EquipmentGateRead,
     EquipmentStatusRead,
     EquipmentTimeReportEntry,
@@ -114,6 +116,47 @@ def delete_gate(gate_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Kapi bulunamadi")
     db.delete(gate)
     db.commit()
+
+
+@router.put("/gates/{gate_id}/line", response_model=EquipmentGateRead, dependencies=[Depends(require_roles(UserRole.ADMIN))])
+def update_gate_line(gate_id: int, payload: EquipmentGateLineUpdate, db: Session = Depends(get_db)):
+    gate = db.get(EquipmentGate, gate_id)
+    if not gate:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Kapi bulunamadi")
+    gate.line_x1 = payload.line_x1
+    gate.line_y1 = payload.line_y1
+    gate.line_x2 = payload.line_x2
+    gate.line_y2 = payload.line_y2
+    gate.inside_x = payload.inside_x
+    gate.inside_y = payload.inside_y
+    db.commit()
+    db.refresh(gate)
+    return gate
+
+
+@router.get(
+    "/gates/{gate_id}/preview",
+    dependencies=[Depends(require_roles(UserRole.ADMIN, UserRole.OPERATOR))],
+)
+def gate_preview(gate_id: int, db: Session = Depends(get_db)):
+    """Kapinin RTSP adresinden tek bir kare cekip JPEG olarak dondurur;
+    panelde cizgi cizme aracinin arka plan goruntusu icin kullanilir."""
+    gate = db.get(EquipmentGate, gate_id)
+    if not gate:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Kapi bulunamadi")
+    if not gate.rtsp_url:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Bu kapi icin RTSP adresi tanimli degil")
+
+    capture = cv2.VideoCapture(gate.rtsp_url)
+    ok, frame = capture.read()
+    capture.release()
+    if not ok:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Kameradan goruntu alinamadi")
+
+    ok, buffer = cv2.imencode(".jpg", frame)
+    if not ok:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Goruntu kodlanamadi")
+    return Response(content=buffer.tobytes(), media_type="image/jpeg")
 
 
 # --- Durum ve kayitlar ------------------------------------------------------
@@ -279,10 +322,23 @@ def _is_debounced(db: Session, gate_id: int, plate_hash: str) -> bool:
     return existing is not None
 
 
-def apply_crossing(db: Session, gate: EquipmentGate, code: str, confidence: float) -> dict | None:
+def apply_crossing(
+    db: Session,
+    gate: EquipmentGate,
+    code: str,
+    confidence: float,
+    direction: CameraDirection | None = None,
+) -> dict | None:
     """Bir gecis okumasini isler: debounce icindeyse None doner (yoksayilir),
     degilse EquipmentCrossingLog + EquipmentState'i gunceller ve yayinlanacak
-    olay mesajini uretip dondurur. Router'dan ayri, dogrudan test edilebilir."""
+    olay mesajini uretip dondurur. Router'dan ayri, dogrudan test edilebilir.
+
+    `direction` verilmezse gate.direction kullanilir (eski tek-kare modu /
+    sabit yonlu kapilar icin). Cizgi takibi yapan worker, her gecis icin
+    gercek yonu (icerisi referans noktasina gore hesaplanmis) acikca
+    gonderir - boylece ayni kapi hem giren hem cikan araci ayirt edebilir."""
+    effective_direction = direction or gate.direction
+
     plate_hash = deterministic_hash(code)
     if _is_debounced(db, gate.id, plate_hash):
         return None
@@ -292,13 +348,13 @@ def apply_crossing(db: Session, gate: EquipmentGate, code: str, confidence: floa
             gate_id=gate.id,
             plate_encrypted=encrypt_text(code),
             plate_hash=plate_hash,
-            direction=gate.direction,
+            direction=effective_direction,
             zone_id=gate.zone_id,
             confidence=confidence,
         )
     )
 
-    new_zone_id = gate.zone_id if gate.direction == CameraDirection.ENTRY else None
+    new_zone_id = gate.zone_id if effective_direction == CameraDirection.ENTRY else None
     state = db.get(EquipmentState, plate_hash)
     if state:
         state.zone_id = new_zone_id
@@ -306,7 +362,7 @@ def apply_crossing(db: Session, gate: EquipmentGate, code: str, confidence: floa
     else:
         db.add(EquipmentState(plate_hash=plate_hash, plate_encrypted=encrypt_text(code), zone_id=new_zone_id))
 
-    if gate.direction == CameraDirection.EXIT:
+    if effective_direction == CameraDirection.EXIT:
         message = f"{code} plakali arac disarida"
     else:
         message = f"{code} plakali arac {gate.zone.name} alaninda"
@@ -316,7 +372,7 @@ def apply_crossing(db: Session, gate: EquipmentGate, code: str, confidence: floa
         "gate_id": gate.id,
         "zone_id": gate.zone_id,
         "zone_name": gate.zone.name,
-        "direction": gate.direction.value,
+        "direction": effective_direction.value,
         "message": message,
         "confidence": confidence,
     }
@@ -352,3 +408,27 @@ async def detect_equipment(
     if events:
         await broadcast_equipment_event({"gate_id": gate.id, "events": events})
     return events
+
+
+@router.post("/crossings")
+async def submit_crossing(
+    payload: EquipmentCrossingSubmit,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Cizgi takibi yapan worker'in (app/equipment_gate_worker.py), bir
+    aracin sanal cizgiyi FIILEN gectigini tespit ettiginde cagirdigi uc.
+    /detect/image'in aksine burada tespit tekrar yapilmaz - worker zaten
+    kendi takip dongusunde en iyi OCR okumasini belirlemistir, burada
+    sadece debounce + durum guncelleme + yayinlama yapilir."""
+    gate = db.get(EquipmentGate, payload.gate_id)
+    if not gate:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Kapi bulunamadi")
+
+    event = apply_crossing(db, gate, payload.code, payload.confidence, direction=payload.direction)
+    db.commit()
+
+    if event:
+        await broadcast_equipment_event({"gate_id": gate.id, "events": [event]})
+        return event
+    return {"debounced": True}

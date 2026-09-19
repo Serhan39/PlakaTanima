@@ -121,6 +121,12 @@ class EquipmentGateCreate(BaseModel):
     rtsp_url: str = ""
     zone_id: int
     direction: CameraDirection
+    line_x1: float = 0.1
+    line_y1: float = 0.5
+    line_x2: float = 0.9
+    line_y2: float = 0.5
+    inside_x: float = 0.5
+    inside_y: float = 0.1
 
     @field_validator("direction")
     @classmethod
@@ -138,6 +144,28 @@ class EquipmentGateRead(BaseModel):
     zone_id: int
     direction: CameraDirection
     is_active: bool
+    line_x1: float
+    line_y1: float
+    line_x2: float
+    line_y2: float
+    inside_x: float
+    inside_y: float
+
+
+class EquipmentGateLineUpdate(BaseModel):
+    line_x1: float
+    line_y1: float
+    line_x2: float
+    line_y2: float
+    inside_x: float
+    inside_y: float
+
+
+class EquipmentCrossingSubmit(BaseModel):
+    gate_id: int
+    code: str
+    confidence: float = 0.5
+    direction: CameraDirection | None = None
 
 
 class EquipmentStatusRead(BaseModel):

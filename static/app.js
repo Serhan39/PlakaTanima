@@ -506,6 +506,7 @@ async function setupEquipmentTracking() {
     loadEquipmentTimeReport();
   });
 
+  setupGateLineEditor();
   loadZones();
   loadEquipmentLogs();
   connectEquipmentLiveFeed();
@@ -542,8 +543,13 @@ async function deleteZone(id) {
   }
 }
 
+let currentGatesCache = [];
+let currentZonesCache = [];
+
 async function loadGates() {
   const [gates, zones] = await Promise.all([apiFetch("/api/equipment/gates"), apiFetch("/api/equipment/zones")]);
+  currentGatesCache = gates;
+  currentZonesCache = zones;
   const zoneNames = Object.fromEntries(zones.map((z) => [z.id, z.name]));
   const tbody = document.querySelector("#gate-table tbody");
   tbody.innerHTML = gates
@@ -553,7 +559,10 @@ async function loadGates() {
         <td>${zoneNames[g.zone_id] || "-"}</td>
         <td>${DIRECTION_LABELS[g.direction] || g.direction}</td>
         <td>${g.rtsp_url || "-"}</td>
-        <td><button onclick="deleteGate(${g.id})">Sil</button></td>
+        <td>
+          <button class="secondary" onclick="openGateLineEditor(${g.id})" ${g.rtsp_url ? "" : "disabled"}>Cizgiyi Duzenle</button>
+          <button onclick="deleteGate(${g.id})">Sil</button>
+        </td>
       </tr>`
     )
     .join("");
@@ -573,6 +582,153 @@ async function deleteGate(id) {
   } catch (err) {
     alert(err.message);
   }
+}
+
+let lineEditorState = null; // { gateId, img, points: [{x,y,kind}] }
+
+function openGateLineEditor(gateId) {
+  const gate = currentGatesCache.find((g) => g.id === gateId);
+  if (!gate) return;
+  const zone = currentZonesCache.find((z) => z.id === gate.zone_id);
+
+  document.getElementById("gate-line-editor-title").textContent = `${gate.name} - Gecis Cizgisi`;
+  document.getElementById("gate-line-zone-name").textContent = zone ? zone.name : "?";
+  document.getElementById("gate-line-editor").style.display = "block";
+  document.getElementById("gate-line-editor").scrollIntoView({ behavior: "smooth", block: "center" });
+
+  lineEditorState = { gateId, img: null, points: [] };
+  loadGateLinePreview();
+}
+
+async function loadGateLinePreview() {
+  if (!lineEditorState) return;
+  const canvas = document.getElementById("gate-line-canvas");
+  try {
+    const response = await fetch(`/api/equipment/gates/${lineEditorState.gateId}/preview`, { headers: authHeaders() });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      alert(body.detail || "Kameradan onizleme alinamadi");
+      return;
+    }
+    const blob = await response.blob();
+    const img = new Image();
+    img.onload = () => {
+      canvas.width = img.width;
+      canvas.height = img.height;
+      lineEditorState.img = img;
+
+      const gate = currentGatesCache.find((g) => g.id === lineEditorState.gateId);
+      lineEditorState.points = gate
+        ? [
+            { x: gate.line_x1 * img.width, y: gate.line_y1 * img.height, kind: "line" },
+            { x: gate.line_x2 * img.width, y: gate.line_y2 * img.height, kind: "line" },
+            { x: gate.inside_x * img.width, y: gate.inside_y * img.height, kind: "inside" },
+          ]
+        : [];
+      redrawLineEditor();
+    };
+    img.src = URL.createObjectURL(blob);
+  } catch (err) {
+    alert("Onizleme alinamadi: " + err.message);
+  }
+}
+
+function redrawLineEditor() {
+  if (!lineEditorState || !lineEditorState.img) return;
+  const canvas = document.getElementById("gate-line-canvas");
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(lineEditorState.img, 0, 0, canvas.width, canvas.height);
+
+  const linePoints = lineEditorState.points.filter((p) => p.kind === "line");
+  const insidePoint = lineEditorState.points.find((p) => p.kind === "inside");
+
+  if (linePoints.length === 2) {
+    ctx.strokeStyle = "#dc2626";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(linePoints[0].x, linePoints[0].y);
+    ctx.lineTo(linePoints[1].x, linePoints[1].y);
+    ctx.stroke();
+  }
+  linePoints.forEach((p) => {
+    ctx.fillStyle = "#dc2626";
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 7, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  if (insidePoint) {
+    ctx.fillStyle = "#16a34a";
+    ctx.beginPath();
+    ctx.arc(insidePoint.x, insidePoint.y, 9, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function setupGateLineEditor() {
+  const canvas = document.getElementById("gate-line-canvas");
+  canvas.addEventListener("click", (event) => {
+    if (!lineEditorState || !lineEditorState.img) return;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const x = (event.clientX - rect.left) * scaleX;
+    const y = (event.clientY - rect.top) * scaleY;
+
+    const linePoints = lineEditorState.points.filter((p) => p.kind === "line");
+    if (linePoints.length < 2) {
+      // ilk iki tiklama: cizginin iki ucu
+      lineEditorState.points = [...linePoints, { x, y, kind: "line" }];
+    } else {
+      // ucuncu ve sonraki tiklamalar: "icerisi" tarafini gunceller
+      lineEditorState.points = [...linePoints, { x, y, kind: "inside" }];
+    }
+    redrawLineEditor();
+  });
+
+  document.getElementById("gate-line-refresh-btn").addEventListener("click", () => loadGateLinePreview());
+
+  document.getElementById("gate-line-reset-btn").addEventListener("click", () => {
+    if (!lineEditorState) return;
+    lineEditorState.points = [];
+    redrawLineEditor();
+  });
+
+  document.getElementById("gate-line-cancel-btn").addEventListener("click", () => {
+    document.getElementById("gate-line-editor").style.display = "none";
+    lineEditorState = null;
+  });
+
+  document.getElementById("gate-line-save-btn").addEventListener("click", async () => {
+    if (!lineEditorState) return;
+    const linePoints = lineEditorState.points.filter((p) => p.kind === "line");
+    const insidePoint = lineEditorState.points.find((p) => p.kind === "inside");
+    if (linePoints.length !== 2 || !insidePoint) {
+      alert("Once cizginin iki ucuna, sonra icerisi tarafina tiklayin (toplam 3 tiklama)");
+      return;
+    }
+    const canvas = document.getElementById("gate-line-canvas");
+    try {
+      await apiFetch(`/api/equipment/gates/${lineEditorState.gateId}/line`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          line_x1: linePoints[0].x / canvas.width,
+          line_y1: linePoints[0].y / canvas.height,
+          line_x2: linePoints[1].x / canvas.width,
+          line_y2: linePoints[1].y / canvas.height,
+          inside_x: insidePoint.x / canvas.width,
+          inside_y: insidePoint.y / canvas.height,
+        }),
+      });
+      alert("Cizgi kaydedildi. Etkili olmasi icin equipment-worker servisini yeniden baslatin (docker compose restart equipment-worker).");
+      document.getElementById("gate-line-editor").style.display = "none";
+      lineEditorState = null;
+      loadGates();
+    } catch (err) {
+      alert(err.message);
+    }
+  });
 }
 
 async function loadEquipmentStatus() {

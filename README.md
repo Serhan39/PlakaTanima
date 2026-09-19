@@ -150,13 +150,23 @@ plaka formatini **zorunlu kilmaz** — OCR, herhangi bir alfanumerik kodu
   ust kosesindeki "Is Makinasi Takip" onay kutusunu isaretleyip ozelligi
   acana kadar hicbir kullaniciya gorunmez.
 - **Alan (Zone)**: adlandirilmis bolgeler (orn. "A Alani", "B Alani").
-- **Kapi (Gate)**: bir alana bagli, "Giris" veya "Cikis" olarak
-  isaretlenmis kamera konumu. Cikis kapisindan okunan bir kod "disarida"
-  durumuna, giris kapisindan okunan kod ilgili alanin durumuna gecer.
+- **Kapi (Gate)**: bir alana bagli kamera konumu.
+- **Cizgi (sanal tripwire) tespiti**: kamera genis bir alani goruyorsa
+  (sadece dar kapi bosluguna degil), aracin goruntude "bulunmasi" ile
+  kapidan "gecmesi" ayni sey degildir. Panelde her kapi icin, kameradan
+  alinan ornek goruntu uzerinde tiklayarak bir gecis cizgisi cizilir
+  (Kapilar tablosunda "Cizgiyi Duzenle"). `app/equipment_gate_worker.py`,
+  RTSP akisini SUREKLI okuyup plakayi/kodu kareler arasinda basit bir
+  merkez-nokta takibiyle izler ve cizgiyi FIILEN gectigi an bunu bildirir
+  — sadece kameranin bir seyi "gormesi" degil, gercek bir gecis olmasi
+  aranir.
+- **Giren/cikan ayrimi**: ayni fiziksel kapidan hem giren hem cikan arac
+  olabilecegi icin yon kapiya sabit degildir. Cizgiyi cizerken ayrica
+  cizginin hangi tarafinin "icerisi" (ilgili alan) oldugu isaretlenir;
+  bir aracin gectikten sonraki tarafi bu referansla ayni ise **GIRIS**,
+  degilse **CIKIS** olarak otomatik ayirt edilir (bkz. `app/vision/tracker.py`).
 - **Yanlis alarm onleme**: ayni kod/kapi icin `EQUIPMENT_CROSSING_DEBOUNCE_SECONDS`
-  (varsayilan 30sn) icinde tekrar eden okumalar tek bir gecis sayilir —
-  yani durum, kameranin her okuma yapmasina degil, kapidan fiilen bir kez
-  gecilmis olmasina gore guncellenir.
+  (varsayilan 30sn) icinde tekrar eden okumalar tek bir gecis sayilir.
 - Canli Izleme paneli "ABCD plakali arac B alaninda" / "... disarida" gibi
   mesajlari aninda WebSocket ile gosterir; Guncel Durum tablosu tum
   makinelerin son bilinen konumunu listeler.
@@ -167,7 +177,9 @@ plaka formatini **zorunlu kilmaz** — OCR, herhangi bir alfanumerik kodu
 - Kapi kameralarindan goruntu almak icin `app/equipment_gate_worker.py`
   kullanilir (docker-compose icinde `equipment-worker` servisi olarak
   hazir gelir, `.env` icinde `EQUIPMENT_WORKER_USERNAME`/`_PASSWORD`
-  doldurulmadan calismaz, hata vermeden bekler).
+  doldurulmadan calismaz, hata vermeden bekler). Bir kapinin cizgisi
+  panelden degistirildiginde, worker'in bunu almasi icin yeniden
+  baslatilmasi gerekir: `docker compose restart equipment-worker`.
 
 ## Kurulum
 

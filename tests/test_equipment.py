@@ -10,7 +10,8 @@ from sqlalchemy.orm import sessionmaker
 from app.crypto import decrypt_text, deterministic_hash, encrypt_text
 from app.database import Base
 from app.models import CameraDirection, EquipmentCrossingLog, EquipmentGate, EquipmentState, EquipmentZone
-from app.routers.equipment import apply_crossing, crossing_logs, time_report
+from app.routers.equipment import apply_crossing, crossing_logs, time_report, update_gate_line
+from app.schemas import EquipmentGateLineUpdate
 from app.settings_store import get_setting, set_setting
 from app.vision.ocr import _best_candidate
 
@@ -61,6 +62,42 @@ def test_exit_gate_clears_zone():
     assert event["message"] == "IS-001 plakali arac disarida"
     state = db.query(EquipmentState).first()
     assert state.zone_id is None
+
+
+def test_explicit_direction_overrides_gate_default_direction():
+    # Ayni fiziksel kapidan hem giren hem cikan arac olabilir; cizgi takibi
+    # yapan worker her gecis icin gercek yonu acikca gonderir ve bu,
+    # kapinin sabit/varsayilan yonunu (gate.direction) gecersiz kilmalidir.
+    db = _session()
+    exit_a, _ = _zone_and_gates(db)  # exit_a.direction == EXIT (varsayilan)
+
+    event = apply_crossing(db, exit_a, "IS-001", 0.8, direction=CameraDirection.ENTRY)
+    db.commit()
+
+    assert event["direction"] == "entry"
+    assert event["message"] == "IS-001 plakali arac A Alani alaninda"
+    state = db.query(EquipmentState).first()
+    assert state.zone_id == exit_a.zone_id
+
+
+def test_update_gate_line_persists_line_and_inside_point():
+    db = _session()
+    exit_a, _ = _zone_and_gates(db)
+
+    updated = update_gate_line(
+        exit_a.id,
+        EquipmentGateLineUpdate(line_x1=0.2, line_y1=0.3, line_x2=0.8, line_y2=0.3, inside_x=0.5, inside_y=0.1),
+        db=db,
+    )
+
+    assert updated.line_x1 == 0.2
+    assert updated.line_y2 == 0.3
+    assert updated.inside_x == 0.5
+    assert updated.inside_y == 0.1
+
+    reloaded = db.get(EquipmentGate, exit_a.id)
+    assert reloaded.line_x1 == 0.2
+    assert reloaded.inside_y == 0.1
 
 
 def test_repeated_reads_within_window_are_debounced():
