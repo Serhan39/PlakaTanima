@@ -15,7 +15,7 @@ ilham alındığı ve lisans/AGPL riskinin nasıl yönetildiği).
 ## Öne Çıkan Özellikler
 
 - **Türk plaka formatına özel doğrulama** — il kodu + harf + rakam
-  kombinasyonlarını (örn. `34 ABC 123`) doğrulayan, OCR karakter
+  kombinasyonlarını (örn. `34 ABC 12`) doğrulayan, OCR karakter
   karışıklıklarını (Türkçe karakter/rakam) toparlayan bir doğrulayıcı.
 - **Çoklu kamera desteği** — her kamera bağımsız bir worker sürecinde
   RTSP akışını işler, API'ye görüntü gönderir.
