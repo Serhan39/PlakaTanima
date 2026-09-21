@@ -42,14 +42,27 @@ def _process_camera(camera: dict, token: str) -> None:
     ok, buffer = cv2.imencode(".jpg", frame)
     if not ok:
         return
+    jpeg_bytes = buffer.tobytes()
 
     requests.post(
         f"{API_BASE_URL}/api/detect/image",
         params={"camera_id": camera["id"]},
-        files={"file": ("frame.jpg", buffer.tobytes(), "image/jpeg")},
+        files={"file": ("frame.jpg", jpeg_bytes, "image/jpeg")},
         headers={"Authorization": f"Bearer {token}"},
         timeout=15,
     )
+
+    # Ayni kareyi, panelde "Canli Kameralar" izgarasinin anlik gosterebilmesi
+    # icin onbellege de gonderiyoruz - ekstra RTSP baglantisi acmadan.
+    try:
+        requests.post(
+            f"{API_BASE_URL}/api/cameras/{camera['id']}/live-frame",
+            files={"file": ("frame.jpg", jpeg_bytes, "image/jpeg")},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=5,
+        )
+    except requests.RequestException:
+        pass  # canli onizleme ikincil ozellik, hata tespit akisini kesmemeli
 
 
 def main() -> None:

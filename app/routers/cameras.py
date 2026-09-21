@@ -1,8 +1,9 @@
 import cv2
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.live_frame_cache import get_frame, set_frame
 from app.models import Camera, RelayEventLog, User, UserRole
 from app.outputs.relay import build_relay_driver
 from app.schemas import CameraCreate, CameraRead, RelayTestResult
@@ -18,11 +19,22 @@ def list_cameras(db: Session = Depends(get_db), _: User = Depends(get_current_us
 
 @router.get("/{camera_id}/preview")
 def camera_preview(camera_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    """Kameranin RTSP adresinden tek bir kare cekip JPEG olarak dondurur;
-    panelde 'Canli Kamera' kucuk onizlemesi icin periyodik olarak cagrilir."""
+    """Kameranin en son karesini dondurur; panelde 'Canli Kameralar' izgarasi
+    tarafindan periyodik olarak cagrilir.
+
+    Once bellekteki onbellege bakar (app/camera_worker.py, zaten tespit icin
+    actigi RTSP baglantisindan okudugu her kareyi buraya da yaziyor) - bu,
+    anlik ve ek kamera baglantisi gerektirmiyor. camera_worker henuz hic kare
+    gondermemisse (yeni eklenmis kamera, worker henuz yeniden baslamamis vb.)
+    tek seferlik dogrudan RTSP baglantisiyla geriye duser."""
     camera = db.get(Camera, camera_id)
     if not camera:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Kamera bulunamadi")
+
+    cached = get_frame(camera_id)
+    if cached is not None:
+        return Response(content=cached, media_type="image/jpeg")
+
     if not camera.rtsp_url:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Bu kamera icin RTSP adresi tanimli degil")
 
@@ -36,6 +48,22 @@ def camera_preview(camera_id: int, db: Session = Depends(get_db), _: User = Depe
     if not ok:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Goruntu kodlanamadi")
     return Response(content=buffer.tobytes(), media_type="image/jpeg")
+
+
+@router.post("/{camera_id}/live-frame", status_code=status.HTTP_204_NO_CONTENT)
+async def push_live_frame(
+    camera_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """app/camera_worker.py'nin, tespit icin zaten cektigi kareyi canli
+    onizleme onbellegine yazmak icin cagirdigi uc. Ekstra dogrulama/kod
+    cozme yapmiyor - worker JPEG'i oldugu gibi buraya iletiyor."""
+    if not db.get(Camera, camera_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Kamera bulunamadi")
+    data = await file.read()
+    set_frame(camera_id, data)
 
 
 @router.post("", response_model=CameraRead, dependencies=[Depends(require_roles(UserRole.ADMIN))])
