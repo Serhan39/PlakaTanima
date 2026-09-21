@@ -171,6 +171,12 @@ class EquipmentCrossingSubmit(BaseModel):
     direction: CameraDirection | None = None
 
 
+class EquipmentCrossingManualSubmit(BaseModel):
+    gate_id: int
+    code: str
+    direction: CameraDirection
+
+
 class EquipmentStatusRead(BaseModel):
     plate: str
     zone_id: int | None
@@ -186,6 +192,7 @@ class EquipmentCrossingRead(BaseModel):
     zone_name: str
     direction: CameraDirection
     confidence: float
+    source: str = "camera"
     created_at: datetime
 
 

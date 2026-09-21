@@ -91,35 +91,53 @@ function switchTab(tab) {
 }
 
 let liveCameraTimer = null;
-let liveCameraObjectUrl = null;
+let liveCameraIds = [];
+const liveCameraObjectUrls = {}; // cameraId -> mevcut blob URL (bellek sizintisini onlemek icin revoke edilecek)
+const liveCameraGen = {}; // cameraId -> son istek nesli (gec donen eski cevaplari yoksaymak icin)
 
 async function setupLiveCameraPreview() {
-  const select = document.getElementById("live-camera-select");
-  select.addEventListener("change", () => {
-    stopLiveCameraPolling();
-    startLiveCameraPolling();
-  });
+  await loadLiveCameraGrid();
+}
 
+async function loadLiveCameraGrid() {
+  const grid = document.getElementById("live-camera-grid");
+  const emptyMsg = document.getElementById("live-camera-empty");
   try {
     const cameras = await apiFetch("/api/cameras");
     const usable = cameras.filter((c) => c.rtsp_url);
-    select.innerHTML = usable.map((c) => `<option value="${c.id}">${c.name}</option>`).join("");
+    liveCameraIds = usable.map((c) => c.id);
+
     if (usable.length === 0) {
-      document.getElementById("live-camera-placeholder").textContent = "Onizlenebilir kamera yok (once RTSP adresli bir kamera ekleyin)";
+      grid.innerHTML = "";
+      grid.appendChild(emptyMsg);
+      emptyMsg.textContent = "Onizlenebilir kamera yok (once RTSP adresli bir kamera ekleyin)";
+      stopLiveCameraPolling();
       return;
     }
-    startLiveCameraPolling();
+
+    grid.innerHTML = usable
+      .map(
+        (c) => `<div class="live-camera-tile">
+          <div class="live-camera-frame">
+            <img id="live-camera-img-${c.id}" alt="${c.name}" style="display:none;">
+            <div id="live-camera-placeholder-${c.id}" class="live-camera-placeholder">Yukleniyor...</div>
+          </div>
+          <div class="live-camera-label">${c.name}</div>
+        </div>`
+      )
+      .join("");
+
+    if (document.getElementById("tab-live").classList.contains("active")) startLiveCameraPolling();
   } catch (err) {
-    // kamera listesi alinamadiysa sessizce yoksay, placeholder yerinde kalir
+    // kamera listesi alinamadiysa sessizce yoksay, mevcut grid yerinde kalir
   }
 }
 
 function startLiveCameraPolling() {
-  const select = document.getElementById("live-camera-select");
-  if (!select.value) return;
+  if (liveCameraIds.length === 0) return;
   stopLiveCameraPolling();
-  refreshLiveCameraFrame();
-  liveCameraTimer = setInterval(refreshLiveCameraFrame, 3000);
+  refreshAllLiveCameraFrames();
+  liveCameraTimer = setInterval(refreshAllLiveCameraFrames, 3000);
 }
 
 function stopLiveCameraPolling() {
@@ -129,15 +147,22 @@ function stopLiveCameraPolling() {
   }
 }
 
-async function refreshLiveCameraFrame() {
-  const select = document.getElementById("live-camera-select");
-  const img = document.getElementById("live-camera-img");
-  const placeholder = document.getElementById("live-camera-placeholder");
-  const cameraId = select.value;
-  if (!cameraId) return;
+function refreshAllLiveCameraFrames() {
+  liveCameraIds.forEach((id) => refreshLiveCameraFrame(id));
+}
+
+async function refreshLiveCameraFrame(cameraId) {
+  const img = document.getElementById(`live-camera-img-${cameraId}`);
+  const placeholder = document.getElementById(`live-camera-placeholder-${cameraId}`);
+  if (!img || !placeholder) return; // grid yeniden olusturulmus olabilir
+
+  const requestGen = (liveCameraGen[cameraId] || 0) + 1;
+  liveCameraGen[cameraId] = requestGen;
 
   try {
     const response = await fetch(`/api/cameras/${cameraId}/preview`, { headers: authHeaders() });
+    if (liveCameraGen[cameraId] !== requestGen) return; // bu aradan daha yeni bir istek basladi, sonucu yoksay
+
     if (!response.ok) {
       img.style.display = "none";
       placeholder.style.display = "block";
@@ -145,15 +170,19 @@ async function refreshLiveCameraFrame() {
       return;
     }
     const blob = await response.blob();
+    if (liveCameraGen[cameraId] !== requestGen) return;
+
     const newUrl = URL.createObjectURL(blob);
+    const oldUrl = liveCameraObjectUrls[cameraId];
     img.onload = () => {
-      if (liveCameraObjectUrl) URL.revokeObjectURL(liveCameraObjectUrl);
-      liveCameraObjectUrl = newUrl;
+      if (oldUrl) URL.revokeObjectURL(oldUrl);
     };
+    liveCameraObjectUrls[cameraId] = newUrl;
     img.src = newUrl;
     img.style.display = "block";
     placeholder.style.display = "none";
   } catch (err) {
+    if (liveCameraGen[cameraId] !== requestGen) return;
     img.style.display = "none";
     placeholder.style.display = "block";
     placeholder.textContent = "Kameradan goruntu alinamiyor";
@@ -205,6 +234,7 @@ async function deleteWatchlistEntry(id) {
 
 const RELAY_LABELS = { none: "Yok", http: "HTTP", tcp: "TCP", modbus_tcp: "Modbus TCP" };
 const DIRECTION_LABELS = { none: "-", entry: "Giris", exit: "Cikis" };
+const SOURCE_LABELS = { camera: "Kamera", manual: "Manuel" };
 
 function setupCameras() {
   document.getElementById("camera-form").addEventListener("submit", async (event) => {
@@ -227,6 +257,7 @@ function setupCameras() {
       event.target.reset();
       document.getElementById("relay-config-form").reset();
       loadCameras();
+      loadLiveCameraGrid();
     } catch (err) {
       alert(err.message);
     }
@@ -267,6 +298,7 @@ async function deleteCamera(id) {
   if (!confirm("Bu kamerayi silmek istediginize emin misiniz?")) return;
   await apiFetch(`/api/cameras/${id}`, { method: "DELETE" });
   loadCameras();
+  loadLiveCameraGrid();
 }
 
 async function loadLogs() {
@@ -625,6 +657,32 @@ async function setupEquipmentTracking() {
     }
   });
 
+  if (getRole() === "admin" || getRole() === "operator") {
+    document.getElementById("eq-manual-crossing-wrap").style.display = "block";
+    document.getElementById("eq-manual-crossing-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const gate_id = parseInt(document.getElementById("eq-manual-gate").value, 10);
+      const code = document.getElementById("eq-manual-code").value;
+      const direction = document.getElementById("eq-manual-direction").value;
+      if (!gate_id) {
+        alert("Once bir kapi ekleyin");
+        return;
+      }
+      try {
+        await apiFetch("/api/equipment/crossings/manual", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ gate_id, code, direction }),
+        });
+        document.getElementById("eq-manual-code").value = "";
+        loadEquipmentStatus();
+        loadEquipmentLogs();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  }
+
   document.getElementById("eq-log-filter-form").addEventListener("submit", (event) => {
     event.preventDefault();
     loadEquipmentLogs();
@@ -701,6 +759,11 @@ async function loadGates() {
   filterSelect.innerHTML =
     `<option value="">Tum Kapilar</option>` + gates.map((g) => `<option value="${g.id}">${g.name}</option>`).join("");
   filterSelect.value = filterCurrent;
+
+  const manualGateSelect = document.getElementById("eq-manual-gate");
+  const manualCurrent = manualGateSelect.value;
+  manualGateSelect.innerHTML = gates.map((g) => `<option value="${g.id}">${g.name}</option>`).join("");
+  if (manualCurrent) manualGateSelect.value = manualCurrent;
 }
 
 async function deleteGate(id) {
@@ -907,6 +970,7 @@ async function loadEquipmentLogs() {
         <td>${r.zone_name}</td>
         <td>${r.gate_name}</td>
         <td>${DIRECTION_LABELS[r.direction] || r.direction}</td>
+        <td>${SOURCE_LABELS[r.source] || r.source}</td>
         <td>${new Date(r.created_at).toLocaleString("tr-TR")}</td>
       </tr>`
     )

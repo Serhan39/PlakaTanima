@@ -18,6 +18,7 @@ from app.models import (
     UserRole,
 )
 from app.schemas import (
+    EquipmentCrossingManualSubmit,
     EquipmentCrossingRead,
     EquipmentCrossingSubmit,
     EquipmentGateCreate,
@@ -228,6 +229,7 @@ def crossing_logs(
                 zone_name=zones.get(row.zone_id, "?"),
                 direction=row.direction,
                 confidence=row.confidence,
+                source=row.source,
                 created_at=row.created_at,
             )
         )
@@ -328,6 +330,7 @@ def apply_crossing(
     code: str,
     confidence: float,
     direction: CameraDirection | None = None,
+    source: str = "camera",
 ) -> dict | None:
     """Bir gecis okumasini isler: debounce icindeyse None doner (yoksayilir),
     degilse EquipmentCrossingLog + EquipmentState'i gunceller ve yayinlanacak
@@ -336,7 +339,10 @@ def apply_crossing(
     `direction` verilmezse gate.direction kullanilir (eski tek-kare modu /
     sabit yonlu kapilar icin). Cizgi takibi yapan worker, her gecis icin
     gercek yonu (icerisi referans noktasina gore hesaplanmis) acikca
-    gonderir - boylece ayni kapi hem giren hem cikan araci ayirt edebilir."""
+    gonderir - boylece ayni kapi hem giren hem cikan araci ayirt edebilir.
+
+    `source`, kaydin kameradan mi ("camera") yoksa OCR hatali okudugunda
+    panelden elle girilen bir duzeltmeden mi ("manual") geldigini isaretler."""
     effective_direction = direction or gate.direction
 
     plate_hash = deterministic_hash(code)
@@ -351,6 +357,7 @@ def apply_crossing(
             direction=effective_direction,
             zone_id=gate.zone_id,
             confidence=confidence,
+            source=source,
         )
     )
 
@@ -426,6 +433,26 @@ async def submit_crossing(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Kapi bulunamadi")
 
     event = apply_crossing(db, gate, payload.code, payload.confidence, direction=payload.direction)
+    db.commit()
+
+    if event:
+        await broadcast_equipment_event({"gate_id": gate.id, "events": [event]})
+        return event
+    return {"debounced": True}
+
+
+@router.post("/crossings/manual", dependencies=[Depends(require_roles(UserRole.ADMIN, UserRole.OPERATOR))])
+async def submit_manual_crossing(payload: EquipmentCrossingManualSubmit, db: Session = Depends(get_db)):
+    """OCR bir kodu yanlis okudugunda ya da hic okuyamadiginda, yetkili bir
+    kullanicinin panelden dogru kodu elle girip gecisi kaydetmesini saglar.
+    Guven skoru 1.0 (elle girildigi icin OCR belirsizligi yok) ve kayit
+    source='manual' olarak isaretlenir, boylece Gecis Kayitlari'nda ayirt
+    edilebilir."""
+    gate = db.get(EquipmentGate, payload.gate_id)
+    if not gate:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Kapi bulunamadi")
+
+    event = apply_crossing(db, gate, payload.code, confidence=1.0, direction=payload.direction, source="manual")
     db.commit()
 
     if event:

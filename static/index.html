@@ -32,13 +32,9 @@
       <div id="live-status" class="status-pill">Baglaniyor...</div>
 
       <div class="live-camera-widget" id="live-camera-widget">
-        <div class="live-camera-header">
-          <h3>Canli Kamera</h3>
-          <select id="live-camera-select"></select>
-        </div>
-        <div class="live-camera-frame">
-          <img id="live-camera-img" alt="Canli kamera goruntusu" style="display:none;">
-          <div id="live-camera-placeholder" class="live-camera-placeholder">Kamera bulunamadi</div>
+        <h3>Canli Kameralar</h3>
+        <div class="live-camera-grid" id="live-camera-grid">
+          <div class="live-camera-empty" id="live-camera-empty">Kamera bulunamadi</div>
         </div>
       </div>
 
@@ -205,6 +201,20 @@
         <p class="hint">Not: kaydettikten sonra degisikligin worker'a yansimasi icin <code>docker compose restart equipment-worker</code> calistirmaniz gerekir.</p>
       </div>
 
+      <div id="eq-manual-crossing-wrap" style="display:none;">
+        <h3>Manuel Gecis / Duzeltme</h3>
+        <p class="hint">Kamera bir kodu yanlis okuduysa veya hic okuyamadiysa, dogru kodu buradan elle girip gecisi kaydedebilirsiniz.</p>
+        <form id="eq-manual-crossing-form" class="inline-form">
+          <select id="eq-manual-gate" required></select>
+          <input type="text" id="eq-manual-code" placeholder="Dogru kod/plaka" required>
+          <select id="eq-manual-direction">
+            <option value="entry">Giris</option>
+            <option value="exit">Cikis</option>
+          </select>
+          <button type="submit">Kaydet</button>
+        </form>
+      </div>
+
       <h3>Canli Izleme</h3>
       <div id="equipment-live-status" class="status-pill">Baglaniyor...</div>
       <div id="equipment-live-feed" class="detection-list"></div>
@@ -226,7 +236,7 @@
         <button type="submit">Filtrele</button>
       </form>
       <table class="data-table" id="equipment-logs-table">
-        <thead><tr><th>Plaka</th><th>Alan</th><th>Kapi</th><th>Yon</th><th>Zaman</th></tr></thead>
+        <thead><tr><th>Plaka</th><th>Alan</th><th>Kapi</th><th>Yon</th><th>Kaynak</th><th>Zaman</th></tr></thead>
         <tbody></tbody>
       </table>
 

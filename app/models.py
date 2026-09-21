@@ -198,4 +198,5 @@ class EquipmentCrossingLog(Base):
     direction: Mapped[CameraDirection] = mapped_column(Enum(CameraDirection))
     zone_id: Mapped[int] = mapped_column(ForeignKey("equipment_zones.id"))
     confidence: Mapped[float] = mapped_column(Float, default=0.0)
+    source: Mapped[str] = mapped_column(String(16), default="camera")  # "camera" ya da "manual" (elle duzeltme)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)

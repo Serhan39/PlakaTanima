@@ -136,6 +136,29 @@ def test_plate_is_stored_encrypted_not_in_plaintext():
     assert decrypt_text(log.plate_encrypted) == "IS-001"
 
 
+def test_crossing_source_defaults_to_camera():
+    db = _session()
+    _, entry_b = _zone_and_gates(db)
+    apply_crossing(db, entry_b, "IS-001", 0.8)
+    db.commit()
+
+    log = db.query(EquipmentCrossingLog).first()
+    assert log.source == "camera"
+
+
+def test_manual_crossing_is_marked_as_manual_source():
+    # Panelden elle girilen bir duzeltme, OCR/kamera kaynakli kayitlardan
+    # Gecis Kayitlari tablosunda ayirt edilebilmeli.
+    db = _session()
+    _, entry_b = _zone_and_gates(db)
+    apply_crossing(db, entry_b, "IS-001", confidence=1.0, source="manual")
+    db.commit()
+
+    log = db.query(EquipmentCrossingLog).first()
+    assert log.source == "manual"
+    assert log.confidence == 1.0
+
+
 def test_feature_flag_defaults_to_disabled():
     db = _session()
     assert get_setting(db, "equipment_tracking_enabled", "false") == "false"
