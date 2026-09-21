@@ -16,6 +16,7 @@ from app.stream_tokens import mint_token, resolve_token
 router = APIRouter(prefix="/api/cameras", tags=["cameras"])
 
 _STREAM_FRAME_INTERVAL_SECONDS = 0.2  # panelde ~5 kare/sn hedefi
+_STREAM_FIRST_FRAME_TIMEOUT_SECONDS = 10  # bu sure icinde hic kare gelmezse akisi sonlandir
 
 
 @router.get("", response_model=list[CameraRead])
@@ -76,23 +77,37 @@ async def camera_stream(camera_id: int, token: str, request: Request, db: Sessio
     yapilir (bkz. POST /stream-token, app/stream_tokens.py).
 
     Onbellekteki en son kareyi (app/camera_worker.py'nin surekli yazdigi)
-    periyodik olarak yayinlar - ekstra kamera baglantisi acmaz."""
+    periyodik olarak yayinlar - ekstra kamera baglantisi acmaz.
+
+    Onbellekte henuz hic kare yoksa (worker henuz baslamamis, kameraya
+    baglanamiyor, ya da eski bir imajla calisiyor), sonsuza kadar sessizce
+    beklemek yerine _STREAM_FIRST_FRAME_TIMEOUT_SECONDS sonra akisi
+    kapatir - boylece tarayicida "Baglaniliyor..." sonsuza kadar asili
+    kalmak yerine bir hata/yeniden baglanma dongusune girer."""
     if resolve_token(token) != camera_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Gecersiz veya suresi dolmus token")
     if not db.get(Camera, camera_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Kamera bulunamadi")
 
     async def frame_generator():
+        got_first_frame = False
+        waited_seconds = 0.0
         while True:
             if await request.is_disconnected():
                 break
             frame = get_frame(camera_id)
             if frame is not None:
+                got_first_frame = True
                 yield (
                     b"--frame\r\n"
                     b"Content-Type: image/jpeg\r\n"
                     b"Content-Length: " + str(len(frame)).encode() + b"\r\n\r\n" + frame + b"\r\n"
                 )
+            elif not got_first_frame:
+                waited_seconds += _STREAM_FRAME_INTERVAL_SECONDS
+                if waited_seconds >= _STREAM_FIRST_FRAME_TIMEOUT_SECONDS:
+                    print(f"[api] Kamera {camera_id} icin {_STREAM_FIRST_FRAME_TIMEOUT_SECONDS}sn'de hic kare gelmedi, akis kapatiliyor")
+                    break
             await asyncio.sleep(_STREAM_FRAME_INTERVAL_SECONDS)
 
     return StreamingResponse(frame_generator(), media_type="multipart/x-mixed-replace; boundary=frame")
