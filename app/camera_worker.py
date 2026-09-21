@@ -3,16 +3,23 @@ worker sureci. `python -m app.camera_worker` ile veya docker-compose
 icindeki `worker` servisiyle calistirilir; boylece kamera yakalama yuku
 web/API surecinden izole edilir ve yatayda olceklenebilir.
 
-Onceki surumde her dongude kamera basina YENIDEN baglaniliyordu
-(cv2.VideoCapture ac -> tek kare oku -> kapat); RTSP el sikismasi + ilk
-anahtar kareyi bekleme kamera/aga gore 1-3 saniye surebildigi icin bu,
-panelin "Canli Kameralar" izgarasinda atlayarak/donarak gorunmesine yol
-aciyordu. Simdi her kamera icin baglanti BIR KERE aciliyor ve surekli
-okunuyor (app/equipment_gate_worker.py'deki gecit izleme mantigiyla
-ayni desen); okunan her kare canli onizleme onbellegine (PREVIEW_INTERVAL_SECONDS
-siklikla) gonderiliyor, tespit ise ayri ve daha seyrek bir siklikla
-(CAPTURE_INTERVAL_SECONDS) calisiyor - boylece onizleme akiciligi ile
-tespit yuku birbirinden bagimsiz ayarlanabiliyor."""
+Onceki surumde her dongude kamera basina YENIDEN baglaniliyordu; bunu
+kalici baglantiya cevirdigimiz ILK denemede kritik bir hata vardi: kare
+okuma dongusu, aninda gonderilmesi gereken HTTP isteklerini (onizleme +
+OZELLIKLE OCR tespiti - bu saniyeler surebilir) kendi icinde, SENKRON
+olarak yapiyordu. Bu, dongunun bir sonraki capture.read() cagrisini
+geciktiriyor; RTSP soket arabellegi bu sure icinde dolup taskiyor ve
+sonuc olarak kamera "neredeyse hic yeni kare gostermeme, hep ayni karede
+takili kalma" seklinde davranmaya basliyordu (onceki her-dongude-yeniden-
+baglan yontemi, her seferinde SIFIRDAN basladigi icin bu sorunu yasamiyordu).
+
+Duzeltme: OKUMA ve GONDERME islemleri artik AYRI iki dongude (ayri thread)
+calisiyor. Okuma dongusu SADECE capture.read() yapip en son kareyi paylasilan
+bir degiskende tutuyor - asla ag/HTTP beklemez, boylece RTSP arabellegi
+surekli bosaltilmis olur. Gonderme dongusu ise periyodik olarak (PREVIEW_
+INTERVAL_SECONDS) en son kareyi alip onizleme onbellegine, daha seyrek
+olarak da (CAPTURE_INTERVAL_SECONDS) tespite gonderir - bu HTTP cagrilari
+ne kadar surerse sursun, okuma dongusunu ASLA bloke etmez."""
 
 import os
 import threading
@@ -73,18 +80,46 @@ def _submit_detection(camera_id: int, jpeg_bytes: bytes, token: str) -> None:
         print(f"[worker] Tespit gonderilemedi (kamera {camera_id}): {exc}")
 
 
+def _is_active(camera_id: int) -> bool:
+    with _lock:
+        return camera_id in _active_camera_ids
+
+
+def _sender_loop(camera_id: int, latest: dict, frame_lock: threading.Lock, get_token) -> None:
+    """RTSP okuma dongusunden tamamen bagimsiz calisir; boylece HTTP/OCR
+    gecikmesi asla kare okumayi bloke etmez ve RTSP arabellegi taze kalir."""
+    last_detect = 0.0
+    while _is_active(camera_id):
+        time.sleep(PREVIEW_INTERVAL_SECONDS)
+        with frame_lock:
+            frame = latest["frame"]
+        if frame is None:
+            continue
+
+        ok, buffer = cv2.imencode(".jpg", frame)
+        if not ok:
+            continue
+        jpeg_bytes = buffer.tobytes()
+        token = get_token()
+        _push_preview(camera_id, jpeg_bytes, token)
+
+        now = time.monotonic()
+        if now - last_detect >= DETECT_INTERVAL_SECONDS:
+            last_detect = now
+            _submit_detection(camera_id, jpeg_bytes, token)
+
+
 def _camera_loop(camera: dict, get_token) -> None:
     camera_id = camera["id"]
     print(f"[worker] Baglaniliyor: {camera['name']} ({camera['rtsp_url']})")
     capture = cv2.VideoCapture(camera["rtsp_url"])
-    last_preview = 0.0
-    last_detect = 0.0
 
-    while True:
-        with _lock:
-            if camera_id not in _active_camera_ids:
-                break
+    latest: dict = {"frame": None}
+    frame_lock = threading.Lock()
+    sender = threading.Thread(target=_sender_loop, args=(camera_id, latest, frame_lock, get_token), daemon=True)
+    sender.start()
 
+    while _is_active(camera_id):
         ok, frame = capture.read()
         if not ok:
             print(f"[worker] Kare alinamadi: {camera['name']}, yeniden baglaniliyor...")
@@ -93,19 +128,11 @@ def _camera_loop(camera: dict, get_token) -> None:
             capture = cv2.VideoCapture(camera["rtsp_url"])
             continue
 
-        now = time.monotonic()
-        if now - last_preview >= PREVIEW_INTERVAL_SECONDS:
-            last_preview = now
-            ok, buffer = cv2.imencode(".jpg", frame)
-            if ok:
-                jpeg_bytes = buffer.tobytes()
-                token = get_token()
-                _push_preview(camera_id, jpeg_bytes, token)
-                if now - last_detect >= DETECT_INTERVAL_SECONDS:
-                    last_detect = now
-                    _submit_detection(camera_id, jpeg_bytes, token)
+        with frame_lock:
+            latest["frame"] = frame
 
     capture.release()
+    sender.join(timeout=PREVIEW_INTERVAL_SECONDS + 2)
     print(f"[worker] Izleme durduruldu: {camera['name']} (kamera artik pasif/silinmis)")
 
 
