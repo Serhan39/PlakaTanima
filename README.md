@@ -65,9 +65,17 @@ ilham alındığı ve lisans/AGPL riskinin nasıl yönetildiği).
   **OCR Motoru Seçimi**).
 - `app/camera_worker.py` — kamera başına RTSP'ye BİR KERE bağlanıp sürekli
   kare okuyan bağımsız süreç (API sürecinden izole, yatayda ölçeklenebilir).
-  Okunan kareler hem canlı önizleme önbelleğine (sık, `PREVIEW_INTERVAL_SECONDS`)
-  hem de tespite (seyrek, `CAPTURE_INTERVAL_SECONDS`) gönderilir — böylece
-  panel akıcı görünür ama OCR gereksiz yere sık çalışmaz.
+  Okuma ve gönderme ayrı thread'lerdedir (yavaş bir HTTP/OCR isteği kare
+  okumayı asla bloke etmez). Okunan kareler hem canlı önizleme önbelleğine
+  (sık, `PREVIEW_INTERVAL_SECONDS`) hem de tespite (seyrek,
+  `CAPTURE_INTERVAL_SECONDS`) gönderilir.
+- Panelin "Canlı Kameralar" ızgarası, `GET /api/cameras/{id}/stream`
+  üzerinden gerçek bir MJPEG (`multipart/x-mixed-replace`) video akışı
+  izler — tarayıcı bunu `<img>` etiketiyle native oynatır, JS tarafında
+  polling yoktur. Kimlik doğrulama, önce normal JWT ile alınan kısa
+  ömürlü, tek kameraya özel bir "stream token" (`app/stream_tokens.py`,
+  `POST /api/cameras/{id}/stream-token`) ile yapılır — `<img src="...">`
+  özel bir Authorization header taşıyamadığı için.
 
 Her katman (tespit motoru, OCR motoru, veritabanı modelleri, API route'ları,
 panel arayüzü) birbirinden ayrı dosyalarda ve arayüz (interface) üzerinden

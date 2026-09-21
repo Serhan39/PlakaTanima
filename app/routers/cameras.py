@@ -1,15 +1,21 @@
+import asyncio
+
 import cv2
-from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.live_frame_cache import get_frame, set_frame
 from app.models import Camera, RelayEventLog, User, UserRole
 from app.outputs.relay import build_relay_driver
-from app.schemas import CameraCreate, CameraRead, RelayTestResult
+from app.schemas import CameraCreate, CameraRead, RelayTestResult, StreamTokenRead
 from app.security import get_current_user, require_roles
+from app.stream_tokens import mint_token, resolve_token
 
 router = APIRouter(prefix="/api/cameras", tags=["cameras"])
+
+_STREAM_FRAME_INTERVAL_SECONDS = 0.2  # panelde ~5 kare/sn hedefi
 
 
 @router.get("", response_model=list[CameraRead])
@@ -48,6 +54,48 @@ def camera_preview(camera_id: int, db: Session = Depends(get_db), _: User = Depe
     if not ok:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Goruntu kodlanamadi")
     return Response(content=buffer.tobytes(), media_type="image/jpeg")
+
+
+@router.post("/{camera_id}/stream-token", response_model=StreamTokenRead)
+def create_stream_token(camera_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    """Panelin <img> etiketiyle dogrudan baglanacagi /stream ucu icin,
+    normal JWT ile kimligi dogrulanmis bir istemciye kisa omurlu, sadece
+    bu kameranin goruntusunu almaya yeten bir token verir - boylece asil
+    JWT hicbir zaman URL/tarayici gecmisine sizmaz."""
+    if not db.get(Camera, camera_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Kamera bulunamadi")
+    return StreamTokenRead(token=mint_token(camera_id))
+
+
+@router.get("/{camera_id}/stream")
+async def camera_stream(camera_id: int, token: str, request: Request, db: Session = Depends(get_db)):
+    """Gercek zamanli, akici canli goruntu icin MJPEG (multipart/x-mixed-replace)
+    akisi - tarayici <img src="..."> etiketiyle bunu native olarak
+    oynatir, ek JS/polling gerekmez. Kimlik dogrulama Authorization header'i
+    yerine (img etiketi bunu tasiyamaz) kisa omurlu bir stream token ile
+    yapilir (bkz. POST /stream-token, app/stream_tokens.py).
+
+    Onbellekteki en son kareyi (app/camera_worker.py'nin surekli yazdigi)
+    periyodik olarak yayinlar - ekstra kamera baglantisi acmaz."""
+    if resolve_token(token) != camera_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Gecersiz veya suresi dolmus token")
+    if not db.get(Camera, camera_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Kamera bulunamadi")
+
+    async def frame_generator():
+        while True:
+            if await request.is_disconnected():
+                break
+            frame = get_frame(camera_id)
+            if frame is not None:
+                yield (
+                    b"--frame\r\n"
+                    b"Content-Type: image/jpeg\r\n"
+                    b"Content-Length: " + str(len(frame)).encode() + b"\r\n\r\n" + frame + b"\r\n"
+                )
+            await asyncio.sleep(_STREAM_FRAME_INTERVAL_SECONDS)
+
+    return StreamingResponse(frame_generator(), media_type="multipart/x-mixed-replace; boundary=frame")
 
 
 @router.post("/{camera_id}/live-frame", status_code=status.HTTP_204_NO_CONTENT)

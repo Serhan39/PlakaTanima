@@ -90,10 +90,13 @@ function switchTab(tab) {
   if (tab === "live") startLiveCameraPolling(); else stopLiveCameraPolling();
 }
 
-let liveCameraTimer = null;
+// Onceki surum periyodik olarak tek kare cekip <img> gostererek "canli"
+// izlenim veriyordu (poll ne kadar siklastirilirsa siklastirilsin, bu
+// asla gercek video hissi vermez - her zaman ayrik "zipla" adimlari olur).
+// Artik tarayicinin native olarak destekledigi bir MJPEG akisina (<img
+// src="/api/cameras/{id}/stream?token=...">) baglaniyoruz; JS tarafinda
+// polling/interval yok, tarayici karelari geldikce kendisi gosteriyor.
 let liveCameraIds = [];
-const liveCameraObjectUrls = {}; // cameraId -> mevcut blob URL (bellek sizintisini onlemek icin revoke edilecek)
-const liveCameraGen = {}; // cameraId -> son istek nesli (gec donen eski cevaplari yoksaymak icin)
 
 async function setupLiveCameraPreview() {
   await loadLiveCameraGrid();
@@ -111,7 +114,6 @@ async function loadLiveCameraGrid() {
       grid.innerHTML = "";
       grid.appendChild(emptyMsg);
       emptyMsg.textContent = "Onizlenebilir kamera yok (once RTSP adresli bir kamera ekleyin)";
-      stopLiveCameraPolling();
       return;
     }
 
@@ -120,7 +122,7 @@ async function loadLiveCameraGrid() {
         (c) => `<div class="live-camera-tile">
           <div class="live-camera-frame">
             <img id="live-camera-img-${c.id}" alt="${c.name}" style="display:none;">
-            <div id="live-camera-placeholder-${c.id}" class="live-camera-placeholder">Yukleniyor...</div>
+            <div id="live-camera-placeholder-${c.id}" class="live-camera-placeholder">Baglaniliyor...</div>
           </div>
           <div class="live-camera-label">${c.name}</div>
         </div>`
@@ -133,59 +135,45 @@ async function loadLiveCameraGrid() {
   }
 }
 
-function startLiveCameraPolling() {
-  if (liveCameraIds.length === 0) return;
-  stopLiveCameraPolling();
-  refreshAllLiveCameraFrames();
-  liveCameraTimer = setInterval(refreshAllLiveCameraFrames, 1000);
-}
-
-function stopLiveCameraPolling() {
-  if (liveCameraTimer) {
-    clearInterval(liveCameraTimer);
-    liveCameraTimer = null;
+async function startLiveCameraPolling() {
+  for (const id of liveCameraIds) {
+    connectLiveCameraStream(id);
   }
 }
 
-function refreshAllLiveCameraFrames() {
-  liveCameraIds.forEach((id) => refreshLiveCameraFrame(id));
+function stopLiveCameraPolling() {
+  // Akisi kapatmak icin src'yi temizlemek yeterli - tarayici baglantiyi
+  // sonlandirir (sekme degisince gereksiz bant genisligi harcamamak icin).
+  liveCameraIds.forEach((id) => {
+    const img = document.getElementById(`live-camera-img-${id}`);
+    if (img) img.src = "";
+  });
 }
 
-async function refreshLiveCameraFrame(cameraId) {
+async function connectLiveCameraStream(cameraId) {
   const img = document.getElementById(`live-camera-img-${cameraId}`);
   const placeholder = document.getElementById(`live-camera-placeholder-${cameraId}`);
   if (!img || !placeholder) return; // grid yeniden olusturulmus olabilir
 
-  const requestGen = (liveCameraGen[cameraId] || 0) + 1;
-  liveCameraGen[cameraId] = requestGen;
-
   try {
-    const response = await fetch(`/api/cameras/${cameraId}/preview`, { headers: authHeaders() });
-    if (liveCameraGen[cameraId] !== requestGen) return; // bu aradan daha yeni bir istek basladi, sonucu yoksay
-
-    if (!response.ok) {
+    const { token } = await apiFetch(`/api/cameras/${cameraId}/stream-token`, { method: "POST" });
+    img.onload = () => {
+      img.style.display = "block";
+      placeholder.style.display = "none";
+    };
+    img.onerror = () => {
       img.style.display = "none";
       placeholder.style.display = "block";
-      placeholder.textContent = "Kameradan goruntu alinamiyor";
-      return;
-    }
-    const blob = await response.blob();
-    if (liveCameraGen[cameraId] !== requestGen) return;
-
-    const newUrl = URL.createObjectURL(blob);
-    const oldUrl = liveCameraObjectUrls[cameraId];
-    img.onload = () => {
-      if (oldUrl) URL.revokeObjectURL(oldUrl);
+      placeholder.textContent = "Baglanti kesildi, yeniden deneniyor...";
+      // Akis bir ag kesintisi/kamera yeniden baslatma sonrasi koptuyse,
+      // birkac saniye sonra yeni bir token ile yeniden baglan.
+      setTimeout(() => {
+        if (document.getElementById("tab-live").classList.contains("active")) connectLiveCameraStream(cameraId);
+      }, 3000);
     };
-    liveCameraObjectUrls[cameraId] = newUrl;
-    img.src = newUrl;
-    img.style.display = "block";
-    placeholder.style.display = "none";
+    img.src = `/api/cameras/${cameraId}/stream?token=${encodeURIComponent(token)}`;
   } catch (err) {
-    if (liveCameraGen[cameraId] !== requestGen) return;
-    img.style.display = "none";
-    placeholder.style.display = "block";
-    placeholder.textContent = "Kameradan goruntu alinamiyor";
+    placeholder.textContent = "Kameraya baglanilamiyor";
   }
 }
 

@@ -61,6 +61,10 @@ class RelayTestResult(BaseModel):
     message: str
 
 
+class StreamTokenRead(BaseModel):
+    token: str
+
+
 class WatchlistCreate(BaseModel):
     plate: str
     category: WatchlistCategory

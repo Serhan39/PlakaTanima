@@ -32,7 +32,7 @@ API_BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:8000")
 WORKER_USERNAME = os.environ.get("WORKER_USERNAME", "")
 WORKER_PASSWORD = os.environ.get("WORKER_PASSWORD", "")
 DETECT_INTERVAL_SECONDS = float(os.environ.get("CAPTURE_INTERVAL_SECONDS", "2"))
-PREVIEW_INTERVAL_SECONDS = float(os.environ.get("PREVIEW_INTERVAL_SECONDS", "0.5"))
+PREVIEW_INTERVAL_SECONDS = float(os.environ.get("PREVIEW_INTERVAL_SECONDS", "0.2"))
 CAMERA_LIST_REFRESH_SECONDS = float(os.environ.get("CAMERA_LIST_REFRESH_SECONDS", "10"))
 
 _lock = threading.Lock()
