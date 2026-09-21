@@ -63,8 +63,11 @@ ilham alındığı ve lisans/AGPL riskinin nasıl yönetildiği).
 - `app/vision/ocr.py` — değiştirilebilir OCR motoru: varsayılan olarak
   **Tesseract** (tamamen çevrimdışı), opsiyonel olarak EasyOCR (bkz.
   **OCR Motoru Seçimi**).
-- `app/camera_worker.py` — kamera başına RTSP'den kare alıp API'ye gönderen
-  bağımsız süreç; API sürecinden izole, yatayda ölçeklenebilir.
+- `app/camera_worker.py` — kamera başına RTSP'ye BİR KERE bağlanıp sürekli
+  kare okuyan bağımsız süreç (API sürecinden izole, yatayda ölçeklenebilir).
+  Okunan kareler hem canlı önizleme önbelleğine (sık, `PREVIEW_INTERVAL_SECONDS`)
+  hem de tespite (seyrek, `CAPTURE_INTERVAL_SECONDS`) gönderilir — böylece
+  panel akıcı görünür ama OCR gereksiz yere sık çalışmaz.
 
 Her katman (tespit motoru, OCR motoru, veritabanı modelleri, API route'ları,
 panel arayüzü) birbirinden ayrı dosyalarda ve arayüz (interface) üzerinden

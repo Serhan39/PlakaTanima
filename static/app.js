@@ -137,7 +137,7 @@ function startLiveCameraPolling() {
   if (liveCameraIds.length === 0) return;
   stopLiveCameraPolling();
   refreshAllLiveCameraFrames();
-  liveCameraTimer = setInterval(refreshAllLiveCameraFrames, 3000);
+  liveCameraTimer = setInterval(refreshAllLiveCameraFrames, 1000);
 }
 
 function stopLiveCameraPolling() {
