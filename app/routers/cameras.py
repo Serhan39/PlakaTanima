@@ -15,7 +15,7 @@ from app.stream_tokens import mint_token, resolve_token
 
 router = APIRouter(prefix="/api/cameras", tags=["cameras"])
 
-_STREAM_FRAME_INTERVAL_SECONDS = 0.2  # panelde ~5 kare/sn hedefi
+_STREAM_FRAME_INTERVAL_SECONDS = 0.1  # panelde ~10 kare/sn hedefi
 _STREAM_FIRST_FRAME_TIMEOUT_SECONDS = 10  # bu sure icinde hic kare gelmezse akisi sonlandir
 
 

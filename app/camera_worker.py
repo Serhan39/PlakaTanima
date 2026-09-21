@@ -32,7 +32,8 @@ API_BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:8000")
 WORKER_USERNAME = os.environ.get("WORKER_USERNAME", "")
 WORKER_PASSWORD = os.environ.get("WORKER_PASSWORD", "")
 DETECT_INTERVAL_SECONDS = float(os.environ.get("CAPTURE_INTERVAL_SECONDS", "2"))
-PREVIEW_INTERVAL_SECONDS = float(os.environ.get("PREVIEW_INTERVAL_SECONDS", "0.2"))
+PREVIEW_INTERVAL_SECONDS = float(os.environ.get("PREVIEW_INTERVAL_SECONDS", "0.1"))
+PREVIEW_JPEG_QUALITY = int(os.environ.get("PREVIEW_JPEG_QUALITY", "70"))
 CAMERA_LIST_REFRESH_SECONDS = float(os.environ.get("CAMERA_LIST_REFRESH_SECONDS", "10"))
 
 _lock = threading.Lock()
@@ -87,7 +88,12 @@ def _is_active(camera_id: int) -> bool:
 
 def _sender_loop(camera_id: int, latest: dict, frame_lock: threading.Lock, get_token) -> None:
     """RTSP okuma dongusunden tamamen bagimsiz calisir; boylece HTTP/OCR
-    gecikmesi asla kare okumayi bloke etmez ve RTSP arabellegi taze kalir."""
+    gecikmesi asla kare okumayi bloke etmez ve RTSP arabellegi taze kalir.
+
+    Onizleme ve tespit icin AYRI JPEG kodlamalari kullanilir: onizleme
+    dusuk kalitede (PREVIEW_JPEG_QUALITY, varsayilan 70) - kucuk dosya =
+    daha hizli yukleme = panelde daha akici gorunum; tespit ise OCR
+    dogrulugu icin tam kalitede kalir, akiciliktan etkilenmez."""
     last_detect = 0.0
     while _is_active(camera_id):
         time.sleep(PREVIEW_INTERVAL_SECONDS)
@@ -96,17 +102,18 @@ def _sender_loop(camera_id: int, latest: dict, frame_lock: threading.Lock, get_t
         if frame is None:
             continue
 
-        ok, buffer = cv2.imencode(".jpg", frame)
-        if not ok:
-            continue
-        jpeg_bytes = buffer.tobytes()
         token = get_token()
-        _push_preview(camera_id, jpeg_bytes, token)
+
+        ok, preview_buffer = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), PREVIEW_JPEG_QUALITY])
+        if ok:
+            _push_preview(camera_id, preview_buffer.tobytes(), token)
 
         now = time.monotonic()
         if now - last_detect >= DETECT_INTERVAL_SECONDS:
             last_detect = now
-            _submit_detection(camera_id, jpeg_bytes, token)
+            ok, detect_buffer = cv2.imencode(".jpg", frame)
+            if ok:
+                _submit_detection(camera_id, detect_buffer.tobytes(), token)
 
 
 def _camera_loop(camera: dict, get_token) -> None:
