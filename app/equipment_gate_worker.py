@@ -116,6 +116,22 @@ def _gate_loop(gate: dict, get_token) -> None:
         time.sleep(2)
 
 
+def _login_with_retry() -> str:
+    """Docker Compose'da 'depends_on: api' sadece api KONTEYNERININ
+    baslamis olmasini garanti eder, icindeki uvicorn'un istek almaya HAZIR
+    oldugunu degil. Ilk giris denemesi basarisiz olursa surece cokup
+    Docker'in yeniden baslatma politikasina guvenmek yerine, kisa
+    araliklarla kendimiz tekrar deneriz."""
+    delay = 2.0
+    while True:
+        try:
+            return _login()
+        except requests.RequestException as exc:
+            print(f"[equipment-worker] API'ye giris yapilamadi ({exc}), {delay:.0f}sn sonra tekrar denenecek...")
+            time.sleep(delay)
+            delay = min(delay * 1.5, 30.0)
+
+
 def main() -> None:
     if not WORKER_USERNAME or not WORKER_PASSWORD:
         # Is Makinasi Takip ozelligi varsayilan olarak kapali/opsiyoneldir;
@@ -126,11 +142,11 @@ def main() -> None:
         while True:
             time.sleep(3600)
 
-    token_holder = {"value": _login(), "at": time.monotonic()}
+    token_holder = {"value": _login_with_retry(), "at": time.monotonic()}
 
     def get_token() -> str:
         if time.monotonic() - token_holder["at"] > 3600:
-            token_holder["value"] = _login()
+            token_holder["value"] = _login_with_retry()
             token_holder["at"] = time.monotonic()
         return token_holder["value"]
 

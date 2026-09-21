@@ -3,10 +3,34 @@ import threading
 import time
 from unittest.mock import MagicMock, patch
 
+import requests
+
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret")
 os.environ.setdefault("WATCHLIST_ENCRYPTION_KEY", "Gz3n5J9y8k2p6xQm1wZ7fL0oR4sT8vU2cA6bD9eH3iM=")
 
 import app.camera_worker as camera_worker
+
+
+def test_login_with_retry_survives_transient_connection_errors():
+    # Docker Compose'da 'depends_on: api' konteynerin baslamis olmasini
+    # garanti eder ama icindeki uvicorn'un istek almaya hazir oldugunu
+    # garanti etmez - bu yuzden ilk birkac giris denemesi basarisiz olabilir.
+    # _login_with_retry, cokup Docker'in yeniden baslatmasina guvenmek
+    # yerine bunu kendi icinde atlatabilmeli.
+    attempts = {"count": 0}
+
+    def flaky_login():
+        attempts["count"] += 1
+        if attempts["count"] < 3:
+            raise requests.exceptions.ConnectionError("api henuz hazir degil")
+        return "gercek-token"
+
+    with patch.object(camera_worker, "_login", side_effect=flaky_login), \
+         patch("app.camera_worker.time.sleep"):  # testte gercekten beklemeyelim
+        token = camera_worker._login_with_retry()
+
+    assert token == "gercek-token"
+    assert attempts["count"] == 3
 
 
 def _fake_capture():

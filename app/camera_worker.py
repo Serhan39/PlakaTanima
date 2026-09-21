@@ -143,15 +143,33 @@ def _camera_loop(camera: dict, get_token) -> None:
     print(f"[worker] Izleme durduruldu: {camera['name']} (kamera artik pasif/silinmis)")
 
 
+def _login_with_retry() -> str:
+    """Docker Compose'da 'depends_on: api' sadece api KONTEYNERININ
+    baslamis olmasini garanti eder, icindeki uvicorn'un istek almaya HAZIR
+    oldugunu degil (ozellikle DB migrasyonlari suren ilk acilista birkac
+    saniye surebilir). Bu yuzden ilk giris denemesi basarisiz olursa
+    surece cokup Docker'in (giderek yavaslayan) yeniden baslatma
+    politikasina guvenmek yerine, burada kendimiz kisa araliklarla
+    tekrar deneriz."""
+    delay = 2.0
+    while True:
+        try:
+            return _login()
+        except requests.RequestException as exc:
+            print(f"[worker] API'ye giris yapilamadi ({exc}), {delay:.0f}sn sonra tekrar denenecek...")
+            time.sleep(delay)
+            delay = min(delay * 1.5, 30.0)
+
+
 def main() -> None:
     if not WORKER_USERNAME or not WORKER_PASSWORD:
         raise SystemExit("WORKER_USERNAME ve WORKER_PASSWORD ortam degiskenleri gerekli")
 
-    token_holder = {"value": _login(), "at": time.monotonic()}
+    token_holder = {"value": _login_with_retry(), "at": time.monotonic()}
 
     def get_token() -> str:
         if time.monotonic() - token_holder["at"] > 3600:
-            token_holder["value"] = _login()
+            token_holder["value"] = _login_with_retry()
             token_holder["at"] = time.monotonic()
         return token_holder["value"]
 
