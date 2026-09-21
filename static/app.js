@@ -72,6 +72,7 @@ function initDashboard() {
   setupParkingWidget();
   setupEquipmentTracking();
   setupUsers();
+  setupLiveCameraPreview();
   loadLogs();
   loadRecentDetections();
   connectLiveFeed();
@@ -86,6 +87,77 @@ function switchTab(tab) {
   if (tab === "reports") loadReportCameraOptions().then(loadReports);
   if (tab === "equipment") { loadZones(); loadEquipmentStatus(); }
   if (tab === "users") loadUsers();
+  if (tab === "live") startLiveCameraPolling(); else stopLiveCameraPolling();
+}
+
+let liveCameraTimer = null;
+let liveCameraObjectUrl = null;
+
+async function setupLiveCameraPreview() {
+  const select = document.getElementById("live-camera-select");
+  select.addEventListener("change", () => {
+    stopLiveCameraPolling();
+    startLiveCameraPolling();
+  });
+
+  try {
+    const cameras = await apiFetch("/api/cameras");
+    const usable = cameras.filter((c) => c.rtsp_url);
+    select.innerHTML = usable.map((c) => `<option value="${c.id}">${c.name}</option>`).join("");
+    if (usable.length === 0) {
+      document.getElementById("live-camera-placeholder").textContent = "Onizlenebilir kamera yok (once RTSP adresli bir kamera ekleyin)";
+      return;
+    }
+    startLiveCameraPolling();
+  } catch (err) {
+    // kamera listesi alinamadiysa sessizce yoksay, placeholder yerinde kalir
+  }
+}
+
+function startLiveCameraPolling() {
+  const select = document.getElementById("live-camera-select");
+  if (!select.value) return;
+  stopLiveCameraPolling();
+  refreshLiveCameraFrame();
+  liveCameraTimer = setInterval(refreshLiveCameraFrame, 3000);
+}
+
+function stopLiveCameraPolling() {
+  if (liveCameraTimer) {
+    clearInterval(liveCameraTimer);
+    liveCameraTimer = null;
+  }
+}
+
+async function refreshLiveCameraFrame() {
+  const select = document.getElementById("live-camera-select");
+  const img = document.getElementById("live-camera-img");
+  const placeholder = document.getElementById("live-camera-placeholder");
+  const cameraId = select.value;
+  if (!cameraId) return;
+
+  try {
+    const response = await fetch(`/api/cameras/${cameraId}/preview`, { headers: authHeaders() });
+    if (!response.ok) {
+      img.style.display = "none";
+      placeholder.style.display = "block";
+      placeholder.textContent = "Kameradan goruntu alinamiyor";
+      return;
+    }
+    const blob = await response.blob();
+    const newUrl = URL.createObjectURL(blob);
+    img.onload = () => {
+      if (liveCameraObjectUrl) URL.revokeObjectURL(liveCameraObjectUrl);
+      liveCameraObjectUrl = newUrl;
+    };
+    img.src = newUrl;
+    img.style.display = "block";
+    placeholder.style.display = "none";
+  } catch (err) {
+    img.style.display = "none";
+    placeholder.style.display = "block";
+    placeholder.textContent = "Kameradan goruntu alinamiyor";
+  }
 }
 
 function setupWatchlist() {
