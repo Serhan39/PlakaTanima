@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.crypto import deterministic_hash, encrypt_text
 from app.database import SessionLocal, get_db
+from app.detection_burst import add_burst_candidate, pop_finalized_bursts
 from app.models import Camera, CameraDirection, DetectionLog, ParkingState, RelayEventLog, User, WatchlistCategory
 from app.notifications import maybe_send_alert
 from app.outputs.relay import build_relay_driver
@@ -75,6 +76,40 @@ def _update_parking_state(db: Session, camera: Camera | None, plate: str, plate_
             db.delete(existing)
 
 
+def _log_detection(
+    db: Session,
+    background_tasks: BackgroundTasks,
+    camera: Camera | None,
+    camera_id: int | None,
+    plate: str,
+    confidence: float,
+    matched_category: WatchlistCategory | None,
+    snapshot_path: str,
+) -> dict:
+    plate_hash = deterministic_hash(plate)
+    log = DetectionLog(
+        camera_id=camera_id,
+        plate_encrypted=encrypt_text(plate),
+        plate_hash=plate_hash,
+        confidence=confidence,
+        matched_category=matched_category,
+        snapshot_path=snapshot_path,
+    )
+    db.add(log)
+    db.flush()  # log.id'yi almak icin
+    _update_parking_state(db, camera, plate, plate_hash)
+    background_tasks.add_task(_maybe_trigger_relay, camera_id, matched_category)
+    background_tasks.add_task(maybe_send_alert, plate, matched_category, camera.name if camera else "")
+    return {
+        "id": log.id,
+        "plate": plate,
+        "confidence": confidence,
+        "matched_category": matched_category,
+        "has_snapshot": bool(snapshot_path),
+        "camera_id": camera_id,
+    }
+
+
 @router.post("/image")
 async def detect_from_image(
     background_tasks: BackgroundTasks,
@@ -83,6 +118,12 @@ async def detect_from_image(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    """Bir kameraya bagli (camera_id verilmis) her tespit denemesi hemen
+    kaydedilmez: ayni aracin ardisik kareleri, app/detection_burst.py'deki
+    kisa sureli havuzda birikir ve arac goruntuden ayrildiginda (havuz
+    "sonuclanir") COGUNLUK OYLAMASIYLA TEK bir okuma olarak kaydedilir -
+    bkz. o modulun docstring'i. Kameraya bagli OLMAYAN (elle yuklenen)
+    goruntuler bu birikime girmez, eskisi gibi hemen kaydedilir."""
     data = await file.read()
     frame = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
     if frame is None:
@@ -91,6 +132,8 @@ async def detect_from_image(
     camera = db.get(Camera, camera_id) if camera_id is not None else None
     detect_frame, roi_x, roi_y = _apply_roi(frame, camera)
     results: list[PipelineResult] = recognize_plates(detect_frame, _get_detector(), db)
+
+    pending: list[tuple[Camera | None, int | None, str, float, WatchlistCategory | None, str]] = []
 
     if results:
         if roi_x or roi_y:
@@ -101,35 +144,28 @@ async def detect_from_image(
                 result.box.y2 += roi_y
         annotated = draw_detection_boxes(frame, [(r.box, r.plate) for r in results])
         snapshot_path = save_snapshot(annotated)
-    else:
-        snapshot_path = ""
+        for result in results:
+            if camera_id is not None:
+                add_burst_candidate(camera_id, result.plate, result.confidence, snapshot_path, result.matched_category)
+            else:
+                pending.append((camera, camera_id, result.plate, result.confidence, result.matched_category, snapshot_path))
 
-    payload = []
-    for result in results:
-        log = DetectionLog(
-            camera_id=camera_id,
-            plate_encrypted=encrypt_text(result.plate),
-            plate_hash=deterministic_hash(result.plate),
-            confidence=result.confidence,
-            matched_category=result.matched_category,
-            snapshot_path=snapshot_path,
+    # her denemede (arac olsun olmasin) cagrilir, boylece suresi dolmus
+    # patlamalar en gec bir sonraki tespit denemesinde kaydedilir
+    for finalized in pop_finalized_bursts():
+        finalized_camera = db.get(Camera, finalized.camera_id)
+        pending.append(
+            (finalized_camera, finalized.camera_id, finalized.plate, finalized.confidence, finalized.matched_category, finalized.snapshot_path)
         )
-        db.add(log)
-        db.flush()  # log.id'yi almak icin
-        _update_parking_state(db, camera, result.plate, deterministic_hash(result.plate))
-        background_tasks.add_task(_maybe_trigger_relay, camera_id, result.matched_category)
-        background_tasks.add_task(maybe_send_alert, result.plate, result.matched_category, camera.name if camera else "")
-        payload.append(
-            {
-                "id": log.id,
-                "plate": result.plate,
-                "confidence": result.confidence,
-                "matched_category": result.matched_category,
-                "has_snapshot": bool(snapshot_path),
-            }
-        )
+
+    payload = [_log_detection(db, background_tasks, cam, cid, plate, confidence, category, snap) for cam, cid, plate, confidence, category, snap in pending]
     db.commit()
 
     if payload:
-        await broadcast_detection({"camera_id": camera_id, "detections": payload})
+        by_camera: dict[int | None, list[dict]] = {}
+        for entry in payload:
+            by_camera.setdefault(entry["camera_id"], []).append(entry)
+        for cid, entries in by_camera.items():
+            await broadcast_detection({"camera_id": cid, "detections": entries})
+
     return payload
