@@ -32,6 +32,13 @@ class Settings(BaseSettings):
     # Sadece plaka okumada uygulanir (read_equipment_code'da degil - is
     # makinesi etiketlerinde bu bant yok).
     plate_crop_left_trim_fraction: float = 0.12
+    # Tespit kutusu bazen plakanin USTUNDEKI izgarayi/tamponu da kapsayarak
+    # gerekenden "uzun" (dar/kare) geliyor - kullanici bunu goruntude
+    # gozlemledi. Turkiye tek satirlik plakalari yaklasik 4.5:1 (genislik:
+    # yukseklik) oranindadir; kutu bundan BELIRGIN sekilde daha "kisa ve
+    # genis olmayan" (yani nispeten yuksek) gelirse, ustten (izgara/tampon
+    # genelde plakanin USTUNDE kalir) kirpilarak bu orana yaklastirilir.
+    plate_box_target_aspect_ratio: float = 4.5
 
     smtp_host: str = ""
     smtp_port: int = 587

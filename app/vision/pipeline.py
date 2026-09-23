@@ -7,7 +7,7 @@ from app.config import get_settings
 from app.crypto import deterministic_hash
 from app.models import WatchlistCategory, WatchlistEntry
 from app.plate_utils import format_plate, is_valid_turkish_plate
-from app.vision.detector import BoundingBox, HaarCascadePlateDetector, OnnxPlateDetector, PlateDetector
+from app.vision.detector import BoundingBox, HaarCascadePlateDetector, OnnxPlateDetector, PlateDetector, fit_plate_aspect_ratio
 from app.vision.ocr import read_equipment_code, read_plate_text
 
 
@@ -62,6 +62,12 @@ def recognize_plates(frame: np.ndarray, detector: PlateDetector, db: Session) ->
     results: list[PipelineResult] = []
     boxes = detector.detect(frame)
     for box in boxes:
+        # Kutu bazen plakanin USTUNDEKI izgara/tamponu da kapsayip gerekenden
+        # "uzun" gelebiliyor - kullanici bunu goruntude gozlemledi, bu da OCR'a
+        # fazladan gurultu karistirir. Iki satirlik (orn. motosiklet) plakalari
+        # bozmamak icin sadece hafif-uzun kutular duzeltilir (bkz. fonksiyonun
+        # kendi docstring'i).
+        box = fit_plate_aspect_ratio(box, settings.plate_box_target_aspect_ratio)
         crop = box.crop(frame)
         if crop.size == 0:
             continue

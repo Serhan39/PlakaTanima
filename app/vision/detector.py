@@ -18,6 +18,31 @@ class BoundingBox:
         return frame[self.y1 : self.y2, self.x1 : self.x2]
 
 
+def fit_plate_aspect_ratio(box: BoundingBox, target_ratio: float, min_ratio_to_correct: float = 3.0) -> BoundingBox:
+    """Kutu, plakanin USTUNDEKI izgara/tamponu da kapsayarak gerekenden
+    "uzun" gelebiliyor (kullanici goruntude gozlemledi) - bu OCR'a fazladan
+    gurultu karistirir. Turkiye TEK SATIRLIK plakalari ~4.5:1 (genislik:
+    yukseklik) civarindadir; ama IKI SATIRLIK (orn. motosiklet) plakalar
+    ~1.3-2:1 gibi COK DAHA KARE bir orana sahiptir - bu ikisini oran
+    tabanli ayirt etmek guvenilir degil. Bu yuzden SADECE aradaki "hafif
+    kirpma" bolgesinde (min_ratio_to_correct <= oran < target_ratio)
+    duzeltme yapilir; oran zaten dusukse (muhtemelen iki satirlik/motosiklet
+    plakasi) HIC dokunulmaz - yanlislikla gecerli bir motosiklet plakasini
+    kirpip bozmamak icin."""
+    width = box.x2 - box.x1
+    height = box.y2 - box.y1
+    if width <= 0 or height <= 0:
+        return box
+
+    ratio = width / height
+    if not (min_ratio_to_correct <= ratio < target_ratio):
+        return box
+
+    target_height = width / target_ratio
+    new_y1 = max(box.y1, box.y2 - int(target_height))
+    return BoundingBox(box.x1, new_y1, box.x2, box.y2, box.confidence)
+
+
 class PlateDetector(ABC):
     @abstractmethod
     def detect(self, frame: np.ndarray) -> list[BoundingBox]:
