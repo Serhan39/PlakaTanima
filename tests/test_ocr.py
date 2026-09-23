@@ -56,23 +56,57 @@ def test_upscale_if_small_leaves_already_large_crops_untouched():
     assert processed.shape == crop.shape
 
 
-def test_strip_left_band_trims_default_fraction_off_the_left_edge():
-    # Gercek olay: "07 MYS 57" plakasinin OCR okumalari (orn. "97MYS57",
-    # "402HYS57") sondaki "MYS57" sabit kalirken bastaki "07" her
-    # seferinde farkli bozuluyordu - Turkiye plakalarinin solundaki mavi
-    # TR/AB bandinin OCR'a karistigina isaret ediyor. Varsayilan %12'lik
-    # kirpma bu bandi disarida birakmali.
-    crop = _small_bgr_crop(height=60, width=200)
+def _crop_with_left_blue_band(height=60, width=200, band_width=30):
+    # Sol tarafta gercek AB/TR bandinin rengine yakin SAF MAVI (BGR
+    # (255,0,0) -> OpenCV HSV'de hue=120, doygunluk=255 - _strip_left_band'in
+    # mavi araliginin (95-135) tam ortasinda), sagda ise plaka metninin
+    # oturdugu beyaz/dusuk doygunluklu arka plan.
+    crop = np.full((height, width, 3), 255, dtype=np.uint8)  # beyaz
+    crop[:, :band_width] = (255, 0, 0)  # BGR mavi
+    return crop
+
+
+def test_strip_left_band_trims_up_to_the_actual_blue_band_extent():
+    # band_width (15px = %7.5), varsayilan azami oranin (%12 = 24px)
+    # altinda kalmali ki guvenlik sinirina degil, gercek mavi tespitine
+    # takildigini dogrulayabilelim.
+    crop = _crop_with_left_blue_band(width=200, band_width=15)
     get_settings.cache_clear()
 
     trimmed = _strip_left_band(crop)
 
-    assert trimmed.shape[1] == 200 - int(200 * 0.12)
-    assert np.array_equal(trimmed, crop[:, 24:])
+    assert trimmed.shape[1] == 200 - 15
+    assert np.array_equal(trimmed, crop[:, 15:])
+
+
+def test_strip_left_band_does_not_touch_a_crop_with_no_blue_band():
+    # Regresyon testi: gercek olayda ("07 MYS 57") ONCEKI (sabit yuzde)
+    # yontem, bantsiz/dar bir kutuda GERCEK PLAKA METNINI kesiyordu
+    # (kirpma sonrasi "0" tamamen kayboluyordu). Solda mavi yoksa (duz
+    # beyaz/gri plaka arka plani), hic kirpma yapilmamali.
+    crop = np.full((60, 200, 3), 255, dtype=np.uint8)  # tamamen beyaz, mavi yok
+    get_settings.cache_clear()
+
+    trimmed = _strip_left_band(crop)
+
+    assert trimmed.shape == crop.shape
+    assert np.array_equal(trimmed, crop)
+
+
+def test_strip_left_band_respects_max_fraction_safety_cap():
+    # Bant, azami orandan (guvenlik siniri) daha genis olsa bile, bu
+    # sinirdan fazla kesilmemeli - yoksa gercek plaka metnine kadar
+    # ilerleyebilir.
+    crop = _crop_with_left_blue_band(width=200, band_width=150)  # %75 mavi
+    get_settings.cache_clear()
+
+    trimmed = _strip_left_band(crop)
+
+    assert trimmed.shape[1] == 200 - int(200 * 0.12)  # varsayilan azami oran
 
 
 def test_strip_left_band_is_a_noop_when_fraction_is_zero(monkeypatch):
-    crop = _small_bgr_crop(height=60, width=200)
+    crop = _crop_with_left_blue_band(width=200, band_width=30)
     monkeypatch.setenv("PLATE_CROP_LEFT_TRIM_FRACTION", "0")
     get_settings.cache_clear()
     try:

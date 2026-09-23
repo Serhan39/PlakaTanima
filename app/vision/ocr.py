@@ -11,14 +11,45 @@ _ALLOWED_CHARS = "ABCDEFGHIJKLMNOPRSTUVYZ0123456789"
 _TARGET_CROP_HEIGHT = 80  # Tesseract kucuk/dusuk cozunurluklu kirpmalarda cok kotu calisir
 
 
+_BLUE_BAND_MIN_HUE = 95   # OpenCV HSV (0-179): AB/TR bandinin mavisi ~yesil-mavi ile lacivert arasi
+_BLUE_BAND_MAX_HUE = 135
+_BLUE_BAND_MIN_SATURATION = 60
+_BLUE_COLUMN_FRACTION = 0.35  # bir sutunun "mavi" sayilmasi icin gereken mavi piksel orani
+
+
 def _strip_left_band(plate_crop: np.ndarray) -> np.ndarray:
     """Turkiye plakalarinin solundaki mavi TR/AB bandini OCR'a vermeden
-    once kirpar (bkz. app/config.py::plate_crop_left_trim_fraction).
-    Fraction 0 ise (veya crop cok darsa) hicbir sey degismez."""
-    fraction = get_settings().plate_crop_left_trim_fraction
+    once kirpar. ONCE sabit bir yuzde (orn. %12) kesiliyordu, ama gercek
+    goruntuyle test edildiginde bu SABIT deger arac/kutuya gore degisen
+    kenar payini hesaba katmadigi icin bazen GERCEK PLAKA METNINI de
+    kesiyordu (gercek olay: "07 MYS 57" -> kirpma sonrasi "7 HYS 57",
+    yani "0" tamamen, "M" kismen kesilmis). Bu yuzden artik SABIT bir
+    yuzde yerine, soldan baslayarak gercekten MAVI olan sutunlari
+    (bandin kendi rengi) tespit edip SADECE onlari kesiyoruz - ilk mavi
+    olmayan sutunda duruyoruz. Boylece kutuda bant hic yoksa (veya zaten
+    disarida birakilmissa) hicbir sey kesilmez; plate_crop_left_trim_
+    fraction artik bu adaptif kesmenin gidebilecegi AZAMI oran (guvenlik
+    sinir) olarak kullanilir - bandin kendisi bu sinirdan uzun surse bile
+    daha fazla kesilmez."""
+    if plate_crop.ndim != 3:
+        return plate_crop
+    max_fraction = get_settings().plate_crop_left_trim_fraction
     w = plate_crop.shape[1]
-    cut = int(w * fraction)
-    if cut <= 0 or cut >= w:
+    max_cut = int(w * max_fraction)
+    if max_cut <= 0:
+        return plate_crop
+
+    hsv = cv2.cvtColor(plate_crop, cv2.COLOR_BGR2HSV)
+    hue, saturation = hsv[:, :, 0], hsv[:, :, 1]
+    is_blue = (hue >= _BLUE_BAND_MIN_HUE) & (hue <= _BLUE_BAND_MAX_HUE) & (saturation >= _BLUE_BAND_MIN_SATURATION)
+    column_blue_fraction = is_blue.mean(axis=0)
+
+    cut = 0
+    for x in range(min(max_cut, w)):
+        if column_blue_fraction[x] < _BLUE_COLUMN_FRACTION:
+            break
+        cut = x + 1
+    if cut <= 0:
         return plate_crop
     return plate_crop[:, cut:]
 
