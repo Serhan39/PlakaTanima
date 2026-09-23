@@ -102,6 +102,11 @@ def _finalize(camera_id: int, burst: _Burst) -> FinalizedDetection:
     winning_plate, _ = counts.most_common(1)[0]
     winning_candidates = [c for c in burst.candidates if c.plate == winning_plate]
     best = max(winning_candidates, key=lambda c: c.confidence)
+    all_plates = [c.plate for c in burst.candidates]
+    print(
+        f"[detect] Kamera {camera_id}: {len(burst.candidates)} aday toplandi {all_plates}, "
+        f"kazanan='{winning_plate}' ({len(winning_candidates)} oy, guven={best.confidence:.2f}) - kaydediliyor"
+    )
     return FinalizedDetection(
         camera_id=camera_id,
         plate=winning_plate,

@@ -60,17 +60,28 @@ def recognize_plates(frame: np.ndarray, detector: PlateDetector, db: Session) ->
     ayni %50 esigini kombine skora uygulamak dogru okumalari da eler."""
     settings = get_settings()
     results: list[PipelineResult] = []
-    for box in detector.detect(frame):
+    boxes = detector.detect(frame)
+    for box in boxes:
         crop = box.crop(frame)
         if crop.size == 0:
             continue
         text, ocr_conf = read_plate_text(crop)
         if not text or not is_valid_turkish_plate(text):
+            # "okumuyor" sikayetlerini teshis edebilmek icin: kutu bulundu
+            # (arac/plaka goruntude) ama OCR gecerli formatta bir metin
+            # uretemedi - hangi durumda oldugumuzu gormeden "neden
+            # okumuyor" sorusuna cevap veremiyoruz.
+            print(f"[detect] Kutu bulundu (kutu guveni={box.confidence:.2f}) ama OCR gecerli plaka metni uretemedi (okunan='{text}')")
             continue
 
         plate = format_plate(text)
         confidence = (box.confidence + ocr_conf) / 2
         if confidence < settings.min_plate_read_confidence:
+            print(
+                f"[detect] Plaka okundu ama guven esik altinda, ATLANDI: {plate} "
+                f"(kombine guven={confidence:.2f}, esik={settings.min_plate_read_confidence:.2f}, "
+                f"kutu guveni={box.confidence:.2f}, ocr guveni={ocr_conf:.2f})"
+            )
             continue
         plate_hash = deterministic_hash(plate)
         match = db.query(WatchlistEntry).filter(WatchlistEntry.plate_hash == plate_hash).first()
