@@ -9,7 +9,7 @@ from app.models import Camera, CameraDirection, DetectionLog, ParkingState, Rela
 from app.notifications import maybe_send_alert
 from app.outputs.relay import build_relay_driver
 from app.security import get_current_user
-from app.snapshots import save_snapshot
+from app.snapshots import draw_detection_boxes, save_snapshot
 from app.vision.pipeline import PipelineResult, build_default_detector, recognize_plates
 from app.websocket_manager import broadcast_detection
 
@@ -71,7 +71,11 @@ async def detect_from_image(
     camera = db.get(Camera, camera_id) if camera_id is not None else None
     results: list[PipelineResult] = recognize_plates(frame, _get_detector(), db)
 
-    snapshot_path = save_snapshot(frame) if results else ""
+    if results:
+        annotated = draw_detection_boxes(frame, [(r.box, r.plate) for r in results])
+        snapshot_path = save_snapshot(annotated)
+    else:
+        snapshot_path = ""
 
     payload = []
     for result in results:

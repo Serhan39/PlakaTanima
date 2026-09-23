@@ -7,7 +7,7 @@ from app.config import get_settings
 from app.crypto import deterministic_hash
 from app.models import WatchlistCategory, WatchlistEntry
 from app.plate_utils import format_plate, is_valid_turkish_plate
-from app.vision.detector import HaarCascadePlateDetector, OnnxPlateDetector, PlateDetector
+from app.vision.detector import BoundingBox, HaarCascadePlateDetector, OnnxPlateDetector, PlateDetector
 from app.vision.ocr import read_equipment_code, read_plate_text
 
 
@@ -16,6 +16,7 @@ class PipelineResult:
     plate: str
     confidence: float
     matched_category: WatchlistCategory | None
+    box: BoundingBox
 
 
 @dataclass
@@ -66,6 +67,7 @@ def recognize_plates(frame: np.ndarray, detector: PlateDetector, db: Session) ->
                 plate=plate,
                 confidence=round(confidence, 3),
                 matched_category=match.category if match else None,
+                box=box,
             )
         )
     return results
