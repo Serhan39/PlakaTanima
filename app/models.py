@@ -69,6 +69,17 @@ class Camera(Base):
     open_categories: Mapped[str] = mapped_column(String(255), default="allowed,staff")
     direction: Mapped[CameraDirection] = mapped_column(Enum(CameraDirection), default=CameraDirection.NONE)
 
+    # Tespit bolgesi (ROI, normalize 0-1 koordinatlar): genis acili kameralarda
+    # arac/plaka goruntude kucuk kalip tespit motoruna (640x640) kucultulunce
+    # kaybolabiliyor. Tanimliysa, tespit ONCESI kare bu bolgeye kirpilip
+    # (dijital yakinlastirma) tespit motoruna oyle verilir - boylece ayni
+    # kamera degistirilmeden efektif cozunurluk artar. Bos ise (None) tum
+    # kare kullanilir (eski davranis, geriye donuk uyumlu).
+    roi_x1: Mapped[float | None] = mapped_column(Float, nullable=True)
+    roi_y1: Mapped[float | None] = mapped_column(Float, nullable=True)
+    roi_x2: Mapped[float | None] = mapped_column(Float, nullable=True)
+    roi_y2: Mapped[float | None] = mapped_column(Float, nullable=True)
+
 
 class WatchlistEntry(Base):
     __tablename__ = "watchlist_entries"

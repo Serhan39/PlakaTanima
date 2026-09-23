@@ -161,6 +161,20 @@ degiskenlerini doldurun:
 `SMTP_HOST` bos birakilirsa e-posta ozelligi sessizce devre disi kalir,
 sistemin geri kalani etkilenmez.
 
+## Tespit Bolgesi (ROI) - Genis Acili Kameralar Icin
+
+Geniş açılı bir kamera bir avlu/girişin tamamını gösteriyorsa, uzaktaki bir
+aracın plakası tespit motorunun çalıştığı 640x640 piksele küçültülünce
+kaybolabilir — model bir "plaka" bile göremez. **Kameralar** sekmesinde her
+kameranın yanındaki **"Bölgeyi Düzenle"** ile, araçların gerçekte geçtiği/
+plakanın görüneceği alanı (kameradan alınan örnek görüntü üzerinde 2
+tıklama: sol-üst ve sağ-alt köşe) işaretleyin. Tespit artık **önce bu
+bölgeye kırpılmış (dijital yakınlaştırılmış) kareyle** çalışır — kamera
+donanımı veya konumu değişmeden efektif çözünürlük artar. Bölge
+tanımlanmazsa (veya "Bölgeyi Kaldır" ile temizlenirse) eskisi gibi tüm kare
+kullanılır. Değişiklik bir sonraki tespitten itibaren geçerlidir, worker
+yeniden başlatmaya gerek yoktur.
+
 ## Otopark Doluluk Takibi
 
 Kameralar sekmesinde bir kamerayi "Giris", bir digerini "Cikis" olarak

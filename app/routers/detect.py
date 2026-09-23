@@ -43,6 +43,26 @@ def _maybe_trigger_relay(camera_id: int | None, category: WatchlistCategory | No
         db.close()
 
 
+def _apply_roi(frame: np.ndarray, camera: Camera | None) -> tuple[np.ndarray, int, int]:
+    """Kamerada bir tespit bolgesi (ROI) tanimliysa, kareyi o bolgeye kirpar
+    (dijital yakinlastirma) - genis acili bir kamerada uzaktaki/kucuk bir
+    plaka, tespit motorunun 640x640'a kucultmesiyle kaybolabiliyor; sadece
+    ilgili bolgeyi tespit motoruna vermek efektif cozunurlugu artirir.
+    Kirpilmis karedeki kutu koordinatlarini orijinal karedeki gercek
+    konumuna geri donusturebilmek icin (x_offset, y_offset) de doner."""
+    if camera is None or None in (camera.roi_x1, camera.roi_y1, camera.roi_x2, camera.roi_y2):
+        return frame, 0, 0
+
+    h, w = frame.shape[:2]
+    x1 = max(0, min(w, int(camera.roi_x1 * w)))
+    y1 = max(0, min(h, int(camera.roi_y1 * h)))
+    x2 = max(0, min(w, int(camera.roi_x2 * w)))
+    y2 = max(0, min(h, int(camera.roi_y2 * h)))
+    if x2 <= x1 or y2 <= y1:
+        return frame, 0, 0
+    return frame[y1:y2, x1:x2], x1, y1
+
+
 def _update_parking_state(db: Session, camera: Camera | None, plate: str, plate_hash: str) -> None:
     if camera is None or camera.direction == CameraDirection.NONE:
         return
@@ -69,9 +89,16 @@ async def detect_from_image(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Gecersiz gorsel")
 
     camera = db.get(Camera, camera_id) if camera_id is not None else None
-    results: list[PipelineResult] = recognize_plates(frame, _get_detector(), db)
+    detect_frame, roi_x, roi_y = _apply_roi(frame, camera)
+    results: list[PipelineResult] = recognize_plates(detect_frame, _get_detector(), db)
 
     if results:
+        if roi_x or roi_y:
+            for result in results:
+                result.box.x1 += roi_x
+                result.box.y1 += roi_y
+                result.box.x2 += roi_x
+                result.box.y2 += roi_y
         annotated = draw_detection_boxes(frame, [(r.box, r.plate) for r in results])
         snapshot_path = save_snapshot(annotated)
     else:

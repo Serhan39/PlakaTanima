@@ -54,6 +54,17 @@ class CameraRead(BaseModel):
     relay_pulse_seconds: float
     open_categories: str
     direction: CameraDirection
+    roi_x1: float | None = None
+    roi_y1: float | None = None
+    roi_x2: float | None = None
+    roi_y2: float | None = None
+
+
+class CameraRoiUpdate(BaseModel):
+    roi_x1: float | None = None
+    roi_y1: float | None = None
+    roi_x2: float | None = None
+    roi_y2: float | None = None
 
 
 class RelayTestResult(BaseModel):

@@ -121,9 +121,30 @@
       </form>
 
       <table class="data-table" id="camera-table">
-        <thead><tr><th>Ad</th><th>Konum</th><th>RTSP</th><th>Durum</th><th>Yon</th><th>Role</th><th></th></tr></thead>
+        <thead><tr><th>Ad</th><th>Konum</th><th>RTSP</th><th>Durum</th><th>Yon</th><th>Role</th><th>Tespit Bolgesi</th><th></th></tr></thead>
         <tbody></tbody>
       </table>
+
+      <div id="camera-roi-editor" class="line-editor" style="display:none;">
+        <h4 id="camera-roi-editor-title"></h4>
+        <p class="hint">
+          Genis acili kameralarda uzaktaki/kucuk plakalar tespit motoruna
+          kucultulunce kaybolabiliyor. Kameradan alinan ornek goruntu
+          uzerinde, araclarin gectigi/plakanin gorunecegi bolgenin
+          <strong>sol-ust</strong> ve <strong>sag-alt</strong> koselerine
+          tiklayin (2 nokta) - tespit sadece bu bolgede (dijital
+          yakinlastirilmis) yapilacak. Iki nokta tamamlaninca otomatik
+          olarak yeniden baslar.
+        </p>
+        <canvas id="camera-roi-canvas" width="640" height="360"></canvas>
+        <div class="inline-form">
+          <button id="camera-roi-refresh-btn" class="ghost-btn" type="button">Goruntuyu Yenile</button>
+          <button id="camera-roi-reset-btn" class="ghost-btn" type="button">Sifirla</button>
+          <button id="camera-roi-clear-btn" class="ghost-btn" type="button">Bolgeyi Kaldir (Tum Kareyi Kullan)</button>
+          <button id="camera-roi-save-btn" type="button">Kaydet</button>
+          <button id="camera-roi-cancel-btn" class="ghost-btn" type="button">Kapat</button>
+        </div>
+      </div>
     </section>
 
     <section id="tab-logs" class="tab-panel">

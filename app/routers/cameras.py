@@ -9,7 +9,7 @@ from app.database import get_db
 from app.live_frame_cache import get_frame, set_frame
 from app.models import Camera, RelayEventLog, User, UserRole
 from app.outputs.relay import build_relay_driver
-from app.schemas import CameraCreate, CameraRead, RelayTestResult, StreamTokenRead
+from app.schemas import CameraCreate, CameraRead, CameraRoiUpdate, RelayTestResult, StreamTokenRead
 from app.security import get_current_user, require_roles
 from app.stream_tokens import mint_token, resolve_token
 
@@ -133,6 +133,26 @@ async def push_live_frame(
 def create_camera(payload: CameraCreate, db: Session = Depends(get_db)):
     camera = Camera(**payload.model_dump())
     db.add(camera)
+    db.commit()
+    db.refresh(camera)
+    return camera
+
+
+@router.put("/{camera_id}/roi", response_model=CameraRead, dependencies=[Depends(require_roles(UserRole.ADMIN))])
+def update_camera_roi(camera_id: int, payload: CameraRoiUpdate, db: Session = Depends(get_db)):
+    """Genis acili kameralarda arac/plaka goruntude kucuk kalip tespit
+    motoruna kucultulunce kaybolabiliyor. Burada tanimlanan bolge
+    (normalize 0-1 koordinatlar), /api/detect/image tarafindan tespit
+    ONCESI kareyi bu bolgeye kirpip (dijital yakinlastirma) motor bu
+    kirpilmis goruntude calisir. Tum alanlar None gonderilirse bolge
+    kaldirilir (tum kare kullanilir - varsayilan davranis)."""
+    camera = db.get(Camera, camera_id)
+    if not camera:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Kamera bulunamadi")
+    camera.roi_x1 = payload.roi_x1
+    camera.roi_y1 = payload.roi_y1
+    camera.roi_x2 = payload.roi_x2
+    camera.roi_y2 = payload.roi_y2
     db.commit()
     db.refresh(camera)
     return camera
