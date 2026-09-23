@@ -1,11 +1,52 @@
 from functools import lru_cache
 
+import cv2
 import numpy as np
 
 from app.config import get_settings
 from app.plate_utils import is_valid_turkish_plate, normalize_plate
 
 _ALLOWED_CHARS = "ABCDEFGHIJKLMNOPRSTUVYZ0123456789"
+
+_TARGET_CROP_HEIGHT = 80  # Tesseract kucuk/dusuk cozunurluklu kirpmalarda cok kotu calisir
+
+
+def _preprocess_for_tesseract(plate_crop: np.ndarray) -> np.ndarray:
+    """Tesseract'a ham (renkli, kucuk, dusuk kontrastli) bir kamera kirpmasi
+    vermek dogrulugu ciddi sekilde dusurur - bu, kullanicinin bildirdigi
+    "plakayi asiri hatali okuyor" sikayetinin ana nedeniydi (onceden HIC
+    on isleme yapilmiyordu). Standart OCR on isleme adimlari:
+      1) Gri tonlama - renk bilgisi metin tanima icin gereksiz/yanıltıcı
+      2) Buyutme - kucuk kirpmalarda (orn. 40px yukseklik) Tesseract cok
+         zayif kalir; en az ~80px yuksekliğe kubik interpolasyonla buyutulur
+      3) CLAHE (yerel kontrast esitleme) - degisken/yetersiz isik telafisi
+      4) Otsu esikleme - siyah/beyaz netlestirme, Tesseract'in en iyi
+         calistigi girdi turu
+    """
+    gray = cv2.cvtColor(plate_crop, cv2.COLOR_BGR2GRAY) if plate_crop.ndim == 3 else plate_crop
+
+    h, w = gray.shape[:2]
+    if h > 0 and h < _TARGET_CROP_HEIGHT:
+        scale = _TARGET_CROP_HEIGHT / h
+        gray = cv2.resize(gray, (max(1, int(w * scale)), _TARGET_CROP_HEIGHT), interpolation=cv2.INTER_CUBIC)
+
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    gray = clahe.apply(gray)
+
+    _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    return binary
+
+
+def _upscale_if_small(plate_crop: np.ndarray) -> np.ndarray:
+    """EasyOCR kendi ic on islemesini yaptigi icin Tesseract'inki kadar agresif
+    bir hazirliga ihtiyac duymaz (asiri isleme - orn. binarize etmek - bir
+    sinir agini aslinda kotu etkileyebilir), ama cok kucuk kirpmalarda yine
+    de buyutme faydali olur."""
+    h, w = plate_crop.shape[:2]
+    if h > 0 and h < _TARGET_CROP_HEIGHT:
+        scale = _TARGET_CROP_HEIGHT / h
+        return cv2.resize(plate_crop, (max(1, int(w * scale)), _TARGET_CROP_HEIGHT), interpolation=cv2.INTER_CUBIC)
+    return plate_crop
 
 
 def _best_candidate(raw_texts_with_conf: list[tuple[str, float]], strict: bool = True) -> tuple[str, float]:
@@ -39,9 +80,10 @@ def _read_with_tesseract(plate_crop: np.ndarray, strict: bool = True) -> tuple[s
     indirilmez. Varsayilan OCR motoru budur (bkz. OCR_ENGINE=tesseract)."""
     import pytesseract
 
+    processed = _preprocess_for_tesseract(plate_crop)
     config = f"--psm 7 -c tessedit_char_whitelist={_ALLOWED_CHARS}"
     data = pytesseract.image_to_data(
-        plate_crop, config=config, output_type=pytesseract.Output.DICT
+        processed, config=config, output_type=pytesseract.Output.DICT
     )
     candidates = [
         (text, float(conf) / 100.0)
@@ -63,7 +105,8 @@ def _easyocr_reader():
 
 
 def _read_with_easyocr(plate_crop: np.ndarray, strict: bool = True) -> tuple[str, float]:
-    results = _easyocr_reader().readtext(plate_crop, allowlist=_ALLOWED_CHARS, detail=1)
+    processed = _upscale_if_small(plate_crop)
+    results = _easyocr_reader().readtext(processed, allowlist=_ALLOWED_CHARS, detail=1)
     return _best_candidate([(text, conf) for _, text, conf in results], strict=strict)
 
 

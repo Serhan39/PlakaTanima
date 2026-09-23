@@ -58,3 +58,34 @@ def test_recognize_plates_skips_invalid_plate_text_without_returning_a_box():
         results = recognize_plates(frame, detector, db)
 
     assert results == []
+
+
+def test_recognize_plates_drops_low_confidence_reading_even_if_format_is_valid():
+    # Gercek olay: "07 BAF 140" plakasi "07 BRE 10" olarak yanlis okunmus
+    # ama format olarak GECERLI bir plaka oldugu icin eskiden yine de
+    # kaydediliyordu (kutu+OCR ortalama guveni %42, varsayilan esik %50'nin
+    # altinda oldugu halde). Artik bu kombine guven de esikle karsilastirilip
+    # dusuk guvenli okumalar reddedilmeli.
+    frame = np.zeros((200, 200, 3), dtype=np.uint8)
+    box = BoundingBox(10, 20, 100, 60, confidence=0.44)  # kutu guveni de dusuk olabilir
+    detector = _FakeDetector(box)
+    db = _session()
+
+    with patch("app.vision.pipeline.read_plate_text", return_value=("07BRE10", 0.40)):
+        # ortalama: (0.44 + 0.40) / 2 = 0.42 -> varsayilan esik 0.5'in altinda
+        results = recognize_plates(frame, detector, db)
+
+    assert results == []
+
+
+def test_recognize_plates_keeps_reading_at_or_above_threshold():
+    frame = np.zeros((200, 200, 3), dtype=np.uint8)
+    box = BoundingBox(10, 20, 100, 60, confidence=0.9)
+    detector = _FakeDetector(box)
+    db = _session()
+
+    with patch("app.vision.pipeline.read_plate_text", return_value=("34ABC12", 0.95)):
+        results = recognize_plates(frame, detector, db)
+
+    assert len(results) == 1
+    assert results[0].confidence >= 0.5
