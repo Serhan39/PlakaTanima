@@ -1,10 +1,7 @@
-# Opsiyonel: daha yuksek OCR dogrulugu icin EasyOCR motoru.
-# `pip install -r requirements.txt -r requirements-easyocr.txt` ile kurun ve
-# .env icinde OCR_ENGINE=easyocr yapin.
-#
-# UYARI: easyocr, ilk calistirmada model agirliklarini internetten indirir
-# (torch bagimliligi ile birlikte ~1-2 GB). Internetsiz/air-gapped kurulumda
-# kullanmayin ya da modeli Docker imaji build asamasinda (internet varken)
-# onceden indirip imaja gomun. Varsayilan motor olan Tesseract bu sorunu
-# yasamaz; bkz. README - OCR Motoru Secimi.
+# Artik Dockerfile'da VARSAYILAN olarak kuruludur (torch CPU-only wheel'i ile
+# birlikte, ~1.4GB) - hangi motorun KULLANILACAGI .env icindeki OCR_ENGINE ile
+# secilir (varsayilan: tesseract, degisiklik gerekmez). Model agirliklari da
+# build asamasinda (internet varken) onceden indirilip imaja gomulur, bu
+# yuzden calisma aninda (OCR_ENGINE=easyocr secilse bile) internete ihtiyac
+# yoktur - bkz. README - OCR Motoru Secimi.
 easyocr==1.7.2

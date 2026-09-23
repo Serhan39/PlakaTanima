@@ -69,11 +69,13 @@ indirilmez. Bu sayede urun, imaj bir kez (internetli bir ortamda)
 derlendikten sonra tamamen internetsiz/air-gapped ortamlarda calisabilir
 (bkz. README.md - Internetsiz Kurulum).
 
-Opsiyonel `easyocr` motoru (`OCR_ENGINE=easyocr`,
-`requirements-easyocr.txt`) daha yuksek dogruluk sunabilir ancak ilk
-calistirmada model agirliklarini internetten indirir; internetsiz
-kurulumlarda kullanilmamali, ya da model Docker imaji build asamasinda
-(internet varken) onceden indirilip imaja gomulmelidir.
+Opsiyonel `easyocr` motoru (`OCR_ENGINE=easyocr`, `requirements-easyocr.txt`)
+kucuk/gercek dunya plaka kirpmalarinda genelde daha yuksek dogruluk ve daha
+anlamli guven puani sunar. Artik Dockerfile'da varsayilan olarak kuruludur
+(CPU-only torch wheel ile, ~1.4GB imaj boyutu eklenir) ve model agirliklari
+build asamasinda (internet varken) onceden indirilip imaja gomulur - bu
+yuzden `OCR_ENGINE=easyocr` secilse bile calisma zamaninda internete
+ihtiyac yoktur, air-gapped kurulumlarda da calisir.
 
 ## Ilham Alinan Acik Kaynak Projeler
 

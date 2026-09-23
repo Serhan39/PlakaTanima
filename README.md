@@ -121,14 +121,18 @@ yalnızca geliştirme ortamında kullanılmalı, ürünle birlikte dağıtılan
 
 ## OCR Motoru Seçimi
 
-| Motor | `.env` ayarı | İnternet gerekir mi? | Not |
+| Motor | `.env` ayarı | Çalışırken internet gerekir mi? | Not |
 |---|---|---|---|
 | **Tesseract** (varsayılan) | `OCR_ENGINE=tesseract` | Hayır | Docker imajına apt ile gömülür, tamamen çevrimdışı çalışır |
-| EasyOCR (opsiyonel) | `OCR_ENGINE=easyocr` | İlk çalıştırmada evet* | Daha yüksek doğruluk, `pip install -r requirements-easyocr.txt` gerekir |
+| EasyOCR (opsiyonel) | `OCR_ENGINE=easyocr` | Hayır | Küçük/gerçek dünya plaka kırpmalarında genelde daha yüksek doğruluk ve daha anlamlı güven puanı verir |
 
-\* İnternetsiz kurulumda EasyOCR kullanmayın; ya Tesseract'ta kalın ya da
-model ağırlıklarını Docker imajını **derlerken** (internet varken) önceden
-indirip imaja gömün.
+İkisi de Dockerfile'da varsayılan olarak kuruludur (`requirements-easyocr.txt`
+dahil, CPU-only torch ile ~1.4GB imaj boyutu eklenir) ve EasyOCR'ın model
+ağırlıkları **build anında** (internet varken) indirilip imaja gömülür — yani
+`OCR_ENGINE=easyocr` seçseniz bile konteyner çalışırken internete ihtiyaç
+yoktur. Değiştirmek için `.env`'de `OCR_ENGINE` değerini güncelleyip
+`docker compose up -d` yapmanız yeterli (yeniden derlemeye gerek yok, motor
+seçimi çalışma zamanında okunur).
 
 ## Röle / I-O Kart Entegrasyonu
 
