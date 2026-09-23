@@ -60,22 +60,39 @@ def test_recognize_plates_skips_invalid_plate_text_without_returning_a_box():
     assert results == []
 
 
-def test_recognize_plates_drops_low_confidence_reading_even_if_format_is_valid():
-    # Gercek olay: "07 BAF 140" plakasi "07 BRE 10" olarak yanlis okunmus
-    # ama format olarak GECERLI bir plaka oldugu icin eskiden yine de
-    # kaydediliyordu (kutu+OCR ortalama guveni %42, varsayilan esik %50'nin
-    # altinda oldugu halde). Artik bu kombine guven de esikle karsilastirilip
-    # dusuk guvenli okumalar reddedilmeli.
+def test_recognize_plates_drops_very_low_confidence_reading_even_if_format_is_valid():
+    # Neredeyse hicbir bilgi tasimayan (kutu ve OCR ikisi de cok dusuk
+    # guvenli) bir okuma, format olarak gecerli olsa bile reddedilmeli.
     frame = np.zeros((200, 200, 3), dtype=np.uint8)
-    box = BoundingBox(10, 20, 100, 60, confidence=0.44)  # kutu guveni de dusuk olabilir
+    box = BoundingBox(10, 20, 100, 60, confidence=0.2)
     detector = _FakeDetector(box)
     db = _session()
 
-    with patch("app.vision.pipeline.read_plate_text", return_value=("07BRE10", 0.40)):
-        # ortalama: (0.44 + 0.40) / 2 = 0.42 -> varsayilan esik 0.5'in altinda
+    with patch("app.vision.pipeline.read_plate_text", return_value=("07BRE10", 0.2)):
+        # ortalama: (0.2 + 0.2) / 2 = 0.2 -> varsayilan MIN_PLATE_READ_CONFIDENCE 0.3'un altinda
         results = recognize_plates(frame, detector, db)
 
     assert results == []
+
+
+def test_recognize_plates_keeps_realworld_confidence_that_used_to_be_wrongly_dropped():
+    # Gercek olay: "07 BAF 140" plakasi kutu+OCR ortalama guveni %42 ile
+    # geldi (dogru okundugunda dahi). Once kombine guven, KUTU icin
+    # dusunulmus %50'lik esikle (DETECTION_CONFIDENCE_THRESHOLD)
+    # karsilastirilinca sistem HICBIR sonuc goster(e)miyordu ("simdi hic
+    # gormuyor" sikayeti). Artik ayri, daha dusuk bir esik
+    # (MIN_PLATE_READ_CONFIDENCE, varsayilan 0.3) kullanildigi icin bu
+    # gercekci guven seviyesindeki dogru okuma artik kaydedilmeli.
+    frame = np.zeros((200, 200, 3), dtype=np.uint8)
+    box = BoundingBox(10, 20, 100, 60, confidence=0.44)
+    detector = _FakeDetector(box)
+    db = _session()
+
+    with patch("app.vision.pipeline.read_plate_text", return_value=("07BAF140", 0.40)):
+        results = recognize_plates(frame, detector, db)
+
+    assert len(results) == 1
+    assert results[0].plate == "07 BAF 140"
 
 
 def test_recognize_plates_keeps_reading_at_or_above_threshold():
@@ -88,4 +105,4 @@ def test_recognize_plates_keeps_reading_at_or_above_threshold():
         results = recognize_plates(frame, detector, db)
 
     assert len(results) == 1
-    assert results[0].confidence >= 0.5
+    assert results[0].confidence >= 0.3

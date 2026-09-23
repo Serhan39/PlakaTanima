@@ -12,6 +12,14 @@ class Settings(BaseSettings):
     watchlist_encryption_key: str = ""
     plate_detector_model_path: str = "models/plate_detector.onnx"
     detection_confidence_threshold: float = 0.5
+    # Kutu (plaka BULMA) guveni icin esik yukaridaki degerle ayni kalir.
+    # Ancak nihai kutu+OCR ORTALAMA guveni, farkli bir olcekte calisir:
+    # gercek kamera goruntusunde Tesseract'in OCR guveni dogru okumalarda
+    # bile genelde dusuk kalir (orn. dogru "07 BAF 140" okumasi bile ~%40
+    # kombine guvenle geldi) - bu yuzden ayni %50 esigini kombine skora
+    # uygulamak DOGRU okumalari da eleyip hicbir sonuc gostermeyebilir.
+    # Bu yuzden nihai filtre icin ayri, daha dusuk bir esik kullanilir.
+    min_plate_read_confidence: float = 0.3
     company_name: str = "Sertek Bilisim"
     ocr_engine: str = "tesseract"
 

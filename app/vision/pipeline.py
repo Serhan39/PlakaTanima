@@ -52,9 +52,12 @@ def recognize_plates(frame: np.ndarray, detector: PlateDetector, db: Session) ->
     OCR metni bulanik/yanlis okunursa bile "format olarak gecerli" bir
     plaka uretebilir (orn. gercek "07 BAF 140" -> yanlis okunan "07 BRE 10"
     de format olarak gecerlidir). Bu yuzden burada, kutu+OCR ORTALAMA
-    guveni de ayni esikle (DETECTION_CONFIDENCE_THRESHOLD) tekrar
+    guveni de ayri bir esikle (MIN_PLATE_READ_CONFIDENCE) tekrar
     filtreleniyor - dusuk guvenli/muhtemelen hatali bir okuma, dogru bir
-    okumayla ayni guvenilirlikte kaydedilmemeli."""
+    okumayla ayni guvenilirlikte kaydedilmemeli. Bu esik, kutu esiginden
+    (DETECTION_CONFIDENCE_THRESHOLD) BILEREK farkli/daha dusuktur: OCR
+    guveni gercek kamera goruntusunde dogru okumalarda bile dusuk cikabilir,
+    ayni %50 esigini kombine skora uygulamak dogru okumalari da eler."""
     settings = get_settings()
     results: list[PipelineResult] = []
     for box in detector.detect(frame):
@@ -67,7 +70,7 @@ def recognize_plates(frame: np.ndarray, detector: PlateDetector, db: Session) ->
 
         plate = format_plate(text)
         confidence = (box.confidence + ocr_conf) / 2
-        if confidence < settings.detection_confidence_threshold:
+        if confidence < settings.min_plate_read_confidence:
             continue
         plate_hash = deterministic_hash(plate)
         match = db.query(WatchlistEntry).filter(WatchlistEntry.plate_hash == plate_hash).first()
