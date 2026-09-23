@@ -6,7 +6,8 @@ os.environ.setdefault("WATCHLIST_ENCRYPTION_KEY", "Gz3n5J9y8k2p6xQm1wZ7fL0oR4sT8
 import cv2
 import numpy as np
 
-from app.vision.ocr import _preprocess_for_tesseract, _upscale_if_small
+from app.config import get_settings
+from app.vision.ocr import _preprocess_for_tesseract, _strip_left_band, _upscale_if_small
 
 
 def _small_bgr_crop(height=30, width=90):
@@ -53,3 +54,29 @@ def test_upscale_if_small_leaves_already_large_crops_untouched():
     processed = _upscale_if_small(crop)
 
     assert processed.shape == crop.shape
+
+
+def test_strip_left_band_trims_default_fraction_off_the_left_edge():
+    # Gercek olay: "07 MYS 57" plakasinin OCR okumalari (orn. "97MYS57",
+    # "402HYS57") sondaki "MYS57" sabit kalirken bastaki "07" her
+    # seferinde farkli bozuluyordu - Turkiye plakalarinin solundaki mavi
+    # TR/AB bandinin OCR'a karistigina isaret ediyor. Varsayilan %12'lik
+    # kirpma bu bandi disarida birakmali.
+    crop = _small_bgr_crop(height=60, width=200)
+    get_settings.cache_clear()
+
+    trimmed = _strip_left_band(crop)
+
+    assert trimmed.shape[1] == 200 - int(200 * 0.12)
+    assert np.array_equal(trimmed, crop[:, 24:])
+
+
+def test_strip_left_band_is_a_noop_when_fraction_is_zero(monkeypatch):
+    crop = _small_bgr_crop(height=60, width=200)
+    monkeypatch.setenv("PLATE_CROP_LEFT_TRIM_FRACTION", "0")
+    get_settings.cache_clear()
+    try:
+        trimmed = _strip_left_band(crop)
+        assert trimmed.shape == crop.shape
+    finally:
+        get_settings.cache_clear()

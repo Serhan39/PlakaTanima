@@ -11,6 +11,18 @@ _ALLOWED_CHARS = "ABCDEFGHIJKLMNOPRSTUVYZ0123456789"
 _TARGET_CROP_HEIGHT = 80  # Tesseract kucuk/dusuk cozunurluklu kirpmalarda cok kotu calisir
 
 
+def _strip_left_band(plate_crop: np.ndarray) -> np.ndarray:
+    """Turkiye plakalarinin solundaki mavi TR/AB bandini OCR'a vermeden
+    once kirpar (bkz. app/config.py::plate_crop_left_trim_fraction).
+    Fraction 0 ise (veya crop cok darsa) hicbir sey degismez."""
+    fraction = get_settings().plate_crop_left_trim_fraction
+    w = plate_crop.shape[1]
+    cut = int(w * fraction)
+    if cut <= 0 or cut >= w:
+        return plate_crop
+    return plate_crop[:, cut:]
+
+
 def _preprocess_for_tesseract(plate_crop: np.ndarray) -> np.ndarray:
     """Tesseract'a ham (renkli, kucuk, dusuk kontrastli) bir kamera kirpmasi
     vermek dogrulugu ciddi sekilde dusurur - bu, kullanicinin bildirdigi
@@ -111,6 +123,7 @@ def _read_with_easyocr(plate_crop: np.ndarray, strict: bool = True) -> tuple[str
 
 
 def read_plate_text(plate_crop: np.ndarray) -> tuple[str, float]:
+    plate_crop = _strip_left_band(plate_crop)
     engine = get_settings().ocr_engine
     if engine == "easyocr":
         return _read_with_easyocr(plate_crop, strict=True)

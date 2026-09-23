@@ -22,6 +22,16 @@ class Settings(BaseSettings):
     min_plate_read_confidence: float = 0.3
     company_name: str = "Sertek Bilisim"
     ocr_engine: str = "tesseract"
+    # Turkiye plakalarinin sol ucunda fiziksel olarak bulunan mavi "TR"/AB
+    # bandi, tespit kutusu plakanin tamamini kapsadiginda OCR'a karisip
+    # gercek plaka metninin BASINA rastgele/hatali karakterler ekleniyor
+    # (gercek olay: "07 MYS 57" -> "97MYS57", "402HYS57", "40ZAYS57" gibi
+    # okumalar - hepsinde sondaki "MYS57"/"YS57" nispeten sabit ama baştaki
+    # "07" her seferinde farkli sekilde bozuluyordu). Bu yuzden OCR'a
+    # vermeden once kirpmanin sol tarafindan bu oranda bir pay kesiliyor.
+    # Sadece plaka okumada uygulanir (read_equipment_code'da degil - is
+    # makinesi etiketlerinde bu bant yok).
+    plate_crop_left_trim_fraction: float = 0.12
 
     smtp_host: str = ""
     smtp_port: int = 587
