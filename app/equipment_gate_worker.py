@@ -67,6 +67,38 @@ def _submit_crossing(token: str, gate_id: int, code: str, confidence: float, dir
         print(f"[equipment-worker] Gecis bildirilemedi (kapi {gate_id}): {exc}")
 
 
+def _reader_loop(gate: dict, latest: dict, frame_lock: threading.Lock) -> None:
+    """RTSP okuma dongusunu isleme (tespit+OCR+takip) dongusunden AYIRIR -
+    aynen camera_worker.py'deki nedenle: bu dongu SADECE capture.read()
+    yapip en son kareyi paylasilan degiskende tutar, asla ONNX/OCR icin
+    beklemez. Eskiden tek bir dongude okuma+isleme+sleep(frame_interval)
+    yapiliyordu; bu, isleme suresi kadar RTSP'nin okunmadan kalmasina ve
+    (FFmpeg/OpenCV arka planda biriken kareleri telafi etmeye calistigi
+    icin) surekli yuksek CPU kullanimina yol aciyordu (gozlemlenen: bir
+    kapi icin %360+ CPU)."""
+    capture = cv2.VideoCapture(gate["rtsp_url"])
+    while not _stop_event.is_set():
+        if not capture.isOpened():
+            print(f"[equipment-worker] RTSP acilamadi: {gate['name']} ({gate['rtsp_url']}), 10sn sonra tekrar denenecek")
+            capture.release()
+            time.sleep(10)
+            capture = cv2.VideoCapture(gate["rtsp_url"])
+            continue
+
+        ok, frame = capture.read()
+        if not ok:
+            print(f"[equipment-worker] Akis kesildi: {gate['name']}, yeniden baglaniliyor")
+            capture.release()
+            time.sleep(2)
+            capture = cv2.VideoCapture(gate["rtsp_url"])
+            continue
+
+        with frame_lock:
+            latest["frame"] = frame
+
+    capture.release()
+
+
 def _gate_loop(gate: dict, get_token) -> None:
     detector = build_default_detector()  # her thread kendi ornegini kullanir (thread-guvenligi icin)
     line = (gate["line_x1"], gate["line_y1"], gate["line_x2"], gate["line_y2"])
@@ -74,46 +106,41 @@ def _gate_loop(gate: dict, get_token) -> None:
     inside_positive = side_of_line(gate["inside_x"], gate["inside_y"], *line) > 0
     frame_interval = 1.0 / max(TRACKER_FPS, 0.1)
 
+    latest: dict = {"frame": None}
+    frame_lock = threading.Lock()
+    reader = threading.Thread(target=_reader_loop, args=(gate, latest, frame_lock), daemon=True)
+    reader.start()
+
+    print(f"[equipment-worker] Kapi izleniyor (cizgi takibi): {gate['name']}")
     while not _stop_event.is_set():
-        capture = cv2.VideoCapture(gate["rtsp_url"])
-        if not capture.isOpened():
-            print(f"[equipment-worker] RTSP acilamadi: {gate['name']} ({gate['rtsp_url']}), 10sn sonra tekrar denenecek")
-            capture.release()
-            time.sleep(10)
+        time.sleep(frame_interval)
+        with frame_lock:
+            frame = latest["frame"]
+        if frame is None:
             continue
 
-        print(f"[equipment-worker] Kapi izleniyor (cizgi takibi): {gate['name']}")
-        while not _stop_event.is_set():
-            ok, frame = capture.read()
-            if not ok:
-                print(f"[equipment-worker] Akis kesildi: {gate['name']}, yeniden baglaniliyor")
-                break
+        height, width = frame.shape[:2]
+        detections = []
+        for box in detector.detect(frame):
+            crop = box.crop(frame)
+            if crop.size == 0:
+                continue
+            code, conf = read_equipment_code(crop)
+            if code and len(code) < MIN_CODE_LENGTH:
+                code = ""
+            cx = ((box.x1 + box.x2) / 2) / width
+            cy = ((box.y1 + box.y2) / 2) / height
+            detections.append((cx, cy, code, conf))
 
-            height, width = frame.shape[:2]
-            detections = []
-            for box in detector.detect(frame):
-                crop = box.crop(frame)
-                if crop.size == 0:
-                    continue
-                code, conf = read_equipment_code(crop)
-                if code and len(code) < MIN_CODE_LENGTH:
-                    code = ""
-                cx = ((box.x1 + box.x2) / 2) / width
-                cy = ((box.y1 + box.y2) / 2) / height
-                detections.append((cx, cy, code, conf))
+        for track in tracker.update(detections):
+            direction = CameraDirection.ENTRY if is_entry_crossing(track.prev_side, inside_positive) else CameraDirection.EXIT
+            if track.best_code:
+                print(f"[equipment-worker] Cizgi gecisi tespit edildi: {gate['name']} -> {track.best_code} ({direction.value})")
+                _submit_crossing(get_token(), gate["id"], track.best_code, track.best_confidence, direction)
+            else:
+                print(f"[equipment-worker] Cizgi gecisi tespit edildi ama plaka okunamadi: {gate['name']} ({direction.value})")
 
-            for track in tracker.update(detections):
-                direction = CameraDirection.ENTRY if is_entry_crossing(track.prev_side, inside_positive) else CameraDirection.EXIT
-                if track.best_code:
-                    print(f"[equipment-worker] Cizgi gecisi tespit edildi: {gate['name']} -> {track.best_code} ({direction.value})")
-                    _submit_crossing(get_token(), gate["id"], track.best_code, track.best_confidence, direction)
-                else:
-                    print(f"[equipment-worker] Cizgi gecisi tespit edildi ama plaka okunamadi: {gate['name']} ({direction.value})")
-
-            time.sleep(frame_interval)
-
-        capture.release()
-        time.sleep(2)
+    reader.join(timeout=2)
 
 
 def _login_with_retry() -> str:
