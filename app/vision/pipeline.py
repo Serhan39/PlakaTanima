@@ -35,7 +35,11 @@ def build_default_detector() -> PlateDetector:
     halde "plaka okunmuyor" sikayeti geldiginde neden anlasilmaz."""
     settings = get_settings()
     try:
-        detector = OnnxPlateDetector(settings.plate_detector_model_path, min_confidence=settings.detection_confidence_threshold)
+        detector = OnnxPlateDetector(
+            settings.plate_detector_model_path,
+            min_confidence=settings.detection_confidence_threshold,
+            num_threads=settings.onnx_num_threads,
+        )
         print(f"[detect] Plaka tespiti icin ONNX motoru kullaniliyor: {settings.plate_detector_model_path}")
         return detector
     except FileNotFoundError:

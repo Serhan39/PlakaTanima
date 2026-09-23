@@ -39,6 +39,16 @@ class Settings(BaseSettings):
     # genis olmayan" (yani nispeten yuksek) gelirse, ustten (izgara/tampon
     # genelde plakanin USTUNDE kalir) kirpilarak bu orana yaklastirilir.
     plate_box_target_aspect_ratio: float = 4.5
+    # onnxruntime, ozel bir sinir verilmezse TEK bir cikarim (inference)
+    # cagrisi icin bile mevcut tum CPU cekirdeklerini kullanmaya calisir.
+    # Bu proje paralelligi zaten kamera/kapi basina AYRI thread'lerle
+    # sagliyor; her cikarimin KENDI ICINDE de tum cekirdekleri kapmaya
+    # calismasi, birden fazla kamera/kapi aktifken CPU'nun asiri abone
+    # olmasina (oversubscription) yol aciyordu - gozlemlenen surekli
+    # %360+ CPU kullaniminin gercek nedeni buydu. 1 (tek cekirdek/cikarim)
+    # varsayilan olarak guvenlidir; cok guclu bir sunucuda hiz icin
+    # artirilabilir.
+    onnx_num_threads: int = 1
 
     smtp_host: str = ""
     smtp_port: int = 587

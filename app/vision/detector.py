@@ -82,7 +82,7 @@ class OnnxPlateDetector(PlateDetector):
     AGPL kapsam genisletmesini urune tasimaz. Model dosyasi musteri/urun
     paketine ayrica saglanir (bkz. README - Model Tedariki)."""
 
-    def __init__(self, model_path: str, input_size: int = 640, min_confidence: float = 0.5):
+    def __init__(self, model_path: str, input_size: int = 640, min_confidence: float = 0.5, num_threads: int = 1):
         import onnxruntime as ort
 
         if not Path(model_path).exists():
@@ -90,7 +90,22 @@ class OnnxPlateDetector(PlateDetector):
                 f"ONNX model bulunamadi: {model_path}. Egitimli bir plaka tespit modelini "
                 "bu yola yerlestirin ya da PLATE_DETECTOR_MODEL_PATH degiskenini guncelleyin."
             )
-        self._session = ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])
+        # onnxruntime, ozel bir sinir belirtilmezse VARSAYILAN olarak mevcut
+        # TUM CPU cekirdeklerini tek bir cikarim (inference) cagrisi icin
+        # kullanmaya calisir. Bu proje zaten paralelligi kamera/kapi basina
+        # AYRI thread'lerle sagliyor (bkz. camera_worker.py, equipment_gate_
+        # worker.py); her cikarimin da KENDI ICINDE tum cekirdekleri
+        # kapmaya calismasi, birden fazla kapi/kamera aktifken CPU'nun asiri
+        # abone olmasina (oversubscription) yol aciyordu - kullanicinin
+        # gozlemledigi %360+ surekli CPU kullaniminin gercek nedeni buydu
+        # (RTSP okuma/isleme ayirma denemesi bunu DUZELTMEDI, cunku darbogaz
+        # I/O degil, ONNX'in kendi ic threading'iydi). num_threads=1
+        # (varsayilan), her cikarimi TEK cekirdekte calistirip disaridaki
+        # thread paralelligine guvenir; ONNX_NUM_THREADS ile ayarlanabilir.
+        options = ort.SessionOptions()
+        options.intra_op_num_threads = max(num_threads, 1)
+        options.inter_op_num_threads = max(num_threads, 1)
+        self._session = ort.InferenceSession(model_path, sess_options=options, providers=["CPUExecutionProvider"])
         self._input_name = self._session.get_inputs()[0].name
         self._input_size = input_size
         self._min_confidence = min_confidence
