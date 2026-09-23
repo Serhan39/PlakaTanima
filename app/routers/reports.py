@@ -17,14 +17,19 @@ from app.security import get_current_user
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
 
+def _as_utc(value: datetime) -> datetime:
+    """Sorgu parametresi olarak gelen date_from/date_to, istekte offset
+    belirtilmemisse naive gelebilir; DB'den okunan detected_at degerleri
+    (app/models.py::UTCDateTime) ise her zaman aware-UTC'dir. Row.detected_at
+    disariya (CSV/JSON) .isoformat() ile verilirken dogru UTC ofseti
+    tasisin diye, buradaki sinir degerlerini de tutarli sekilde UTC olarak
+    isaretliyoruz."""
+    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+
+
 def _default_range(date_from: datetime | None, date_to: datetime | None) -> tuple[datetime, datetime]:
-    """SQLite, DateTime(timezone=True) kolonlarindaki saat dilimi bilgisini
-    saklamiyor: veritabanindan okunan detected_at degerleri her zaman naive
-    (tzinfo'suz) gelir. Varsayilan `end` (datetime.now(timezone.utc)) ise
-    aware'dir; bu ikisini SQL filtresinde birlikte kullanmak sessizce yanlis
-    sonuc verebilir. Tutarlilik icin her iki ucta da tzinfo'yu atiyoruz."""
-    end = (date_to or datetime.now(timezone.utc)).replace(tzinfo=None)
-    start = (date_from.replace(tzinfo=None) if date_from else end - timedelta(days=7))
+    end = _as_utc(date_to) if date_to else datetime.now(timezone.utc)
+    start = _as_utc(date_from) if date_from else end - timedelta(days=7)
     return start, end
 
 

@@ -177,16 +177,19 @@ def status_list(db: Session = Depends(get_db), _: User = Depends(get_current_use
     ]
 
 
+def _as_utc(value: datetime) -> datetime:
+    """Sorgu parametresi olarak gelen date_from/date_to, istekte offset
+    belirtilmemisse naive gelir (FastAPI/Pydantic bunu oldugu gibi birakir).
+    DB'den okunan created_at degerleri (app/models.py::UTCDateTime) artik
+    her zaman aware-UTC oldugu icin, bunlarla dogrudan Python seviyesinde
+    cikarma/karsilastirma yapabilmek (bkz. asagidaki sure hesaplamasi) icin
+    naive gelen degerleri de UTC olarak isaretliyoruz."""
+    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+
+
 def _default_range(date_from: datetime | None, date_to: datetime | None) -> tuple[datetime, datetime]:
-    """SQLite, DateTime(timezone=True) kolonlarindaki saat dilimi bilgisini
-    saklamiyor: veritabanindan okunan created_at degerleri her zaman naive
-    (tzinfo'suz) gelir. Varsayilan `end` (datetime.now(timezone.utc)) ise
-    aware'dir; ikisini karsilastirmak/cikarmak TypeError'a ya da sessizce
-    yanlis SQL filtrelemeye yol acar. Bu yuzden burada her iki ucta da
-    tzinfo'yu atip, tum hesaplamayi tutarli sekilde naive-UTC uzerinden
-    yapiyoruz."""
-    end = (date_to or datetime.now(timezone.utc)).replace(tzinfo=None)
-    start = (date_from.replace(tzinfo=None) if date_from else end - timedelta(days=7))
+    end = _as_utc(date_to) if date_to else datetime.now(timezone.utc)
+    start = _as_utc(date_from) if date_from else end - timedelta(days=7)
     return start, end
 
 

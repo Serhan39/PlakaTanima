@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, String
+from sqlalchemy import DateTime, Enum, Float, ForeignKey, String, TypeDecorator
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -9,6 +9,28 @@ from app.database import Base
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+class UTCDateTime(TypeDecorator):
+    """SQLite, DateTime(timezone=True) ile bile timezone bilgisini
+    KORUMAZ - yazarken UTC olarak kaydedilen bir deger, okunurken tzinfo'su
+    olmayan (naive) bir datetime olarak geri doner. Bu, API yanitlarinda
+    tarihin "UTC oldugu belirtilmeden" serilize edilmesine (orn.
+    "2026-09-23T09:47:50", sonunda 'Z'/ofset olmadan) yol aciyordu -
+    tarayici bunu YEREL saatmis gibi yorumlayip HIC donusturmuyordu, bu
+    yuzden kullaniciya log saatleri kamera saatinden (Turkiye, UTC+3)
+    3 saat geri gorunuyordu ("saat yanlis" sikayeti). Okurken tzinfo=utc
+    ekleyerek, deger DB'de her zaman UTC olarak yazildigi icin, dogru
+    sekilde UTC oldugunu garanti eder - boylece tarayici kendi yerel
+    saatine dogru cevirir."""
+
+    impl = DateTime
+    cache_ok = True
+
+    def process_result_value(self, value: datetime | None, dialect) -> datetime | None:
+        if value is not None and value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value
 
 
 class UserRole(str, enum.Enum):
@@ -32,7 +54,7 @@ class User(Base):
     hashed_password: Mapped[str] = mapped_column(String(255))
     role: Mapped[UserRole] = mapped_column(Enum(UserRole), default=UserRole.VIEWER)
     is_active: Mapped[bool] = mapped_column(default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(timezone=True), default=_utcnow)
 
     # Role'den bagimsiz, kullaniciya ozel bir yetki: rolu "izleyici" olsa
     # bile, bu isaretliyse Is Makinasi Takip ozelligini acip kapatabilir.
@@ -60,7 +82,7 @@ class Camera(Base):
     location: Mapped[str] = mapped_column(String(255), default="")
     rtsp_url: Mapped[str] = mapped_column(String(512))
     is_active: Mapped[bool] = mapped_column(default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(timezone=True), default=_utcnow)
 
     relay_type: Mapped[RelayType] = mapped_column(Enum(RelayType), default=RelayType.NONE)
     relay_target: Mapped[str] = mapped_column(String(255), default="")
@@ -90,7 +112,7 @@ class WatchlistEntry(Base):
     category: Mapped[WatchlistCategory] = mapped_column(Enum(WatchlistCategory), default=WatchlistCategory.ALLOWED)
     note_encrypted: Mapped[str] = mapped_column(String(1024), default="")
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(timezone=True), default=_utcnow)
 
 
 class DetectionLog(Base):
@@ -103,7 +125,7 @@ class DetectionLog(Base):
     confidence: Mapped[float] = mapped_column(Float, default=0.0)
     matched_category: Mapped[WatchlistCategory | None] = mapped_column(Enum(WatchlistCategory), nullable=True)
     snapshot_path: Mapped[str] = mapped_column(String(512), default="")
-    detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
+    detected_at: Mapped[datetime] = mapped_column(UTCDateTime(timezone=True), default=_utcnow, index=True)
 
     camera: Mapped["Camera"] = relationship()
 
@@ -116,7 +138,7 @@ class RelayEventLog(Base):
     triggered_by: Mapped[str] = mapped_column(String(32), default="detection")
     success: Mapped[bool] = mapped_column(default=False)
     message: Mapped[str] = mapped_column(String(512), default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(timezone=True), default=_utcnow, index=True)
 
 
 class ParkingState(Base):
@@ -129,7 +151,7 @@ class ParkingState(Base):
     plate_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
     plate_encrypted: Mapped[str] = mapped_column(String(512))
     camera_id: Mapped[int | None] = mapped_column(ForeignKey("cameras.id"), nullable=True)
-    entered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    entered_at: Mapped[datetime] = mapped_column(UTCDateTime(timezone=True), default=_utcnow)
 
 
 class AppSetting(Base):
@@ -147,7 +169,7 @@ class EquipmentZone(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(128), unique=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(timezone=True), default=_utcnow)
 
 
 class EquipmentGate(Base):
@@ -167,7 +189,7 @@ class EquipmentGate(Base):
     # icerisi referans noktasindan dinamik hesaplanir (bkz. inside_x/y).
     direction: Mapped[CameraDirection] = mapped_column(Enum(CameraDirection))
     is_active: Mapped[bool] = mapped_column(default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(timezone=True), default=_utcnow)
 
     # Kameranin genis bir alani gordugu kurulumlarda, aracin sadece
     # goruntude "bulunmasini" degil, bu sanal cizgiyi fiilen gecmesini
@@ -196,7 +218,7 @@ class EquipmentState(Base):
     plate_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
     plate_encrypted: Mapped[str] = mapped_column(String(512))
     zone_id: Mapped[int | None] = mapped_column(ForeignKey("equipment_zones.id"), nullable=True)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(timezone=True), default=_utcnow)
 
 
 class EquipmentCrossingLog(Base):
@@ -210,4 +232,4 @@ class EquipmentCrossingLog(Base):
     zone_id: Mapped[int] = mapped_column(ForeignKey("equipment_zones.id"))
     confidence: Mapped[float] = mapped_column(Float, default=0.0)
     source: Mapped[str] = mapped_column(String(16), default="camera")  # "camera" ya da "manual" (elle duzeltme)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(timezone=True), default=_utcnow, index=True)

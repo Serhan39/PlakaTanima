@@ -70,12 +70,10 @@ def maybe_send_alert(plate: str, category: WatchlistCategory | None, camera_name
 
 
 def build_daily_report(db: Session, for_date: date | None = None) -> tuple[str, str]:
-    # SQLite, DateTime(timezone=True) kolonlarindaki tzinfo'yu saklamaz;
-    # veritabanindan okunan detected_at degerleri naive gelir. Bu yuzden
-    # burada da naive (tzinfo'suz) sinir degerleri kullaniyoruz, aksi halde
-    # filtre sessizce hicbir satirla eslesmeyebilir.
+    # Gun sinirlari UTC'ye gore hesaplanir (DetectionLog.detected_at,
+    # app/models.py::UTCDateTime sayesinde her zaman aware-UTC'dir).
     for_date = for_date or date.today()
-    start = datetime.combine(for_date, time.min)
+    start = datetime.combine(for_date, time.min, tzinfo=timezone.utc)
     end = start + timedelta(days=1)
 
     query = db.query(DetectionLog).filter(DetectionLog.detected_at >= start, DetectionLog.detected_at < end)
