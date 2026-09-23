@@ -7,7 +7,7 @@ import cv2
 import numpy as np
 
 from app.config import get_settings
-from app.vision.ocr import _preprocess_for_tesseract, _strip_left_band, _upscale_if_small
+from app.vision.ocr import _preprocess_for_tesseract, _save_debug_crop, _strip_left_band, _upscale_if_small
 
 
 def _small_bgr_crop(height=30, width=90):
@@ -80,3 +80,23 @@ def test_strip_left_band_is_a_noop_when_fraction_is_zero(monkeypatch):
         assert trimmed.shape == crop.shape
     finally:
         get_settings.cache_clear()
+
+
+def test_save_debug_crop_writes_the_exact_image_ocr_receives(tmp_path, monkeypatch):
+    # "okumuyor" teshisi icin: OCR'a TAM OLARAK giden goruntuyu sabit bir
+    # dosyaya yazar, boylece kullanicidan bu dosyayi isteyip tahmin yerine
+    # gercek girdiyi gozle inceleyebiliriz.
+    import app.snapshots as snapshots
+
+    monkeypatch.setattr(snapshots, "SNAPSHOT_DIR", tmp_path / "snapshots")
+    crop = _small_bgr_crop(height=40, width=100)
+
+    _save_debug_crop(crop)
+
+    debug_path = tmp_path / "snapshots" / "_debug_last_plate_crop.jpg"
+    assert debug_path.exists()
+
+
+def test_save_debug_crop_never_raises_even_if_write_fails():
+    # Tani ozelligi, ana akisi ASLA bozmamali - yazma basarisiz olsa bile.
+    _save_debug_crop(None)  # gecersiz girdi, cv2.imwrite hata versin diye

@@ -124,10 +124,26 @@ def _read_with_easyocr(plate_crop: np.ndarray, strict: bool = True) -> tuple[str
 
 def read_plate_text(plate_crop: np.ndarray) -> tuple[str, float]:
     plate_crop = _strip_left_band(plate_crop)
+    _save_debug_crop(plate_crop)
     engine = get_settings().ocr_engine
     if engine == "easyocr":
         return _read_with_easyocr(plate_crop, strict=True)
     return _read_with_tesseract(plate_crop, strict=True)
+
+
+def _save_debug_crop(plate_crop: np.ndarray) -> None:
+    """OCR'a TAM OLARAK giden goruntuyu (sol bant kirpildikten sonra, ama
+    preprocess'ten ONCE) sabit bir dosyaya yazar - boylece "neden okumuyor"
+    tesisinde tahmin yapmak yerine kullanicidan bu dosyayi isteyip gercek
+    girdiyi goz ile inceleyebiliriz. Tek, uzerine yazilan sabit dosya -
+    disk/performans maliyeti ihmal edilebilir."""
+    try:
+        from app.snapshots import SNAPSHOT_DIR
+
+        SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
+        cv2.imwrite(str(SNAPSHOT_DIR / "_debug_last_plate_crop.jpg"), plate_crop)
+    except Exception:
+        pass  # tani ozelligi - asla ana akisi bozmamali
 
 
 def read_equipment_code(plate_crop: np.ndarray) -> tuple[str, float]:
