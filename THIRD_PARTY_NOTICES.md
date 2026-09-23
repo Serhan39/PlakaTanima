@@ -40,6 +40,26 @@ Alternatif olarak:
 
 Bu konuda nihai karar, hukuk/uyum ekibiyle teyit edilerek verilmelidir.
 
+### Önerilen Hazır Model: Semihocakli/turkish-plate-recognition-w-yolov8-onnx-to-engine-cpp
+
+`models/plate_detector.onnx` için başlangıç noktası olarak, Türk plakaları
+üzerinde eğitilmiş, hazır bir YOLOv8 ONNX modeli öneriyoruz:
+
+- **Kaynak:** https://github.com/Semihocakli/turkish-plate-recognition-w-yolov8-onnx-to-engine-cpp
+  (`detection_weights/best.onnx`)
+- **Lisans:** Apache-2.0 (ticari kullanıma izin verir, copyleft değildir)
+- **Doğrulama:** Girdi/çıktı tensör formatı (`[1,3,640,640]` → `[1,5,8400]`,
+  tek sınıf "plaka") `app/vision/detector.py::OnnxPlateDetector` ile
+  koddan hiçbir değişiklik gerekmeden doğrudan uyumlu olduğu, ve sentetik
+  bir test görüntüsünde (plaka benzeri dikdörtgen bölge) modelin doğru
+  konumu yüksek güvenle (conf≈0.90) bulduğu doğrulanmıştır. **Gerçek
+  kamera koşullarındaki (açı/mesafe/ışık) doğruluğu bağımsız olarak
+  ölçülmemiştir** — kuruluma özel gerçek görüntülerle test edilmesi
+  önerilir.
+- Bu depo, zaten bu projenin "İlham Alinan Acik Kaynak Projeler"
+  bölümünde mimari referans olarak anılıyordu; burada ayrıca somut bir
+  model dosyası kaynağı olarak da öneriliyor.
+
 ## OCR Motoru ve Cevrimdisi (Offline) Calisma
 
 Varsayilan OCR motoru **Tesseract**'tir (`OCR_ENGINE=tesseract`): Docker

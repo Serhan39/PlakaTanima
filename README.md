@@ -84,13 +84,34 @@ veya kaldırmak diğer katmanları bozmadan yapılabilir.
 
 ## Model Tedariki (Önemli)
 
-Bu depo bir eğitilmiş plaka tespit modeli **içermez**. Varsayılan olarak
-OpenCV'nin hazır kaskad dosyasıyla çalışan düşük maliyetli bir demo motoru
-aktiftir. Üretim kalitesinde doğruluk için:
+Bu depo bir eğitilmiş plaka tespit modeli **içermez** (`models/*.onnx`
+`.gitignore`'dadır — git'e commit edilmez, her kurulumda ayrıca
+yerleştirilir). Dosya yoksa `build_default_detector()` OpenCV'nin hazır
+kaskad dosyasıyla çalışan düşük maliyetli bir demo motoruna geriye düşer;
+bu motor **gerçek kamera görüntüsünde genelde yetersiz kalır** (açı,
+mesafe, ışık değişimlerine dayanıksız) — hangi motorun aktif olduğu
+sunucu loglarında `[detect] ONNX motoru kullaniliyor: ...` ya da
+`[detect] ONNX model dosyasi bulunamadi ... Haar Cascade demo motoruna
+geciliyor` satırıyla açıkça görülür.
 
-1. Türk plakaları üzerinde eğitilmiş bir YOLO tabanlı modeli ONNX formatına
-   dönüştürüp `models/plate_detector.onnx` yoluna yerleştirin, **veya**
-2. Bu işi bir yükleniciden veya Ultralytics Enterprise lisansı ile model
+Üretim kalitesinde doğruluk için üç yol:
+
+1. **Önerilen, ücretsiz başlangıç noktası:** Türk plakaları üzerinde
+   eğitilmiş, Apache-2.0 lisanslı, hazır bir YOLOv8 ONNX modeli mevcut —
+   [Semihocakli/turkish-plate-recognition-w-yolov8-onnx-to-engine-cpp](https://github.com/Semihocakli/turkish-plate-recognition-w-yolov8-onnx-to-engine-cpp)
+   deposundaki `detection_weights/best.onnx` dosyasını indirip
+   `models/plate_detector.onnx` olarak yerleştirin. Girdi/çıktı tensör
+   formatı (`[1,3,640,640]` → `[1,5,8400]`, tek sınıf) bu projedeki
+   `OnnxPlateDetector` ile doğrudan uyumludur, kod değişikliği
+   gerektirmez — kod içi sentetik bir test görüntüsüyle doğrulanmıştır
+   (bkz. [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)). Bu, genel
+   amaçlı bir açık kaynak modelidir; gerçek saha koşullarınızda (kendi
+   kamera açınız, mesafeniz, ışığınız) doğruluğunu mutlaka test edin —
+   yetersiz kalırsa aşağıdaki 2. veya 3. yola geçin.
+2. Kendi kamera görüntülerinizle (yukarıdaki modeli başlangıç noktası
+   olarak kullanıp) ek eğitim/fine-tuning yapıp `models/plate_detector.onnx`
+   yoluna yerleştirin, **veya**
+3. Bu işi bir yükleniciden veya Ultralytics Enterprise lisansı ile model
    sağlayan bir tedarikçiden satın alın.
 
 `ultralytics` paketi (eğitim/aktarım aracı) **AGPL-3.0** lisanslıdır ve

@@ -1,4 +1,3 @@
-import logging
 from dataclasses import dataclass
 
 import numpy as np
@@ -25,26 +24,24 @@ class EquipmentDetection:
     confidence: float
 
 
-logger = logging.getLogger("sertek_alpr.vision")
-
-
 def build_default_detector() -> PlateDetector:
     """ONNX modeli (bkz. README - Model Tedariki) bulunamazsa OpenCV'nin
     hazir Haar Cascade motoruna geriye duser - bu, gercek kamera goruntusunde
     (aci/mesafe/isik degisen) genelde YETERSIZ KALIR, sadece demo/gelistirme
-    icin dusunulmustur. Hangi motorun secildigini acikca loglariz; aksi
+    icin dusunulmustur. Hangi motorun secildigini acikca stdout'a yazariz
+    (print - projedeki diger worker'larla ayni loglama yontemi, logging
+    modulu ek yapilandirma olmadan uvicorn altinda gorunmeyebiliyor); aksi
     halde "plaka okunmuyor" sikayeti geldiginde neden anlasilmaz."""
     settings = get_settings()
     try:
         detector = OnnxPlateDetector(settings.plate_detector_model_path, min_confidence=settings.detection_confidence_threshold)
-        logger.info("Plaka tespiti icin ONNX motoru kullaniliyor: %s", settings.plate_detector_model_path)
+        print(f"[detect] Plaka tespiti icin ONNX motoru kullaniliyor: {settings.plate_detector_model_path}")
         return detector
     except FileNotFoundError:
-        logger.warning(
-            "ONNX model dosyasi bulunamadi (%s) - OpenCV Haar Cascade demo motoruna geciliyor. "
-            "Bu motor gercek kamera goruntusunde genelde yetersiz kalir; "
-            "gercek kullanim icin bkz. README - Model Tedariki.",
-            settings.plate_detector_model_path,
+        print(
+            f"[detect] ONNX model dosyasi bulunamadi ({settings.plate_detector_model_path}) - "
+            "OpenCV Haar Cascade demo motoruna geciliyor. Bu motor gercek kamera goruntusunde "
+            "genelde yetersiz kalir; gercek kullanim icin bkz. README - Model Tedariki."
         )
         return HaarCascadePlateDetector(min_confidence=settings.detection_confidence_threshold)
 
