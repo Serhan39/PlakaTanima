@@ -47,11 +47,17 @@ main { padding: 24px; max-width: 1100px; margin: 0 auto; }
 .live-camera-widget h3 { margin: 0 0 10px; }
 .live-camera-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
 .live-camera-tile { display: flex; flex-direction: column; gap: 6px; }
-.live-camera-frame { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #0f172a; border-radius: 6px; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+.live-camera-frame { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #0f172a; border-radius: 6px; overflow: hidden; display: flex; align-items: center; justify-content: center; cursor: zoom-in; }
 .live-camera-frame img { width: 100%; height: 100%; object-fit: cover; }
 .live-camera-placeholder { color: #94a3b8; text-align: center; padding: 0 16px; font-size: 13px; }
 .live-camera-label { font-size: 13px; font-weight: 600; color: #475569; }
 .live-camera-empty { color: #94a3b8; padding: 20px 0; }
+
+.camera-modal { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; }
+.camera-modal-backdrop { position: absolute; inset: 0; background: rgba(15, 23, 42, .85); }
+.camera-modal-content { position: relative; z-index: 1; background: #0f172a; border-radius: 8px; padding: 12px; max-width: min(90vw, 1100px); max-height: 90vh; display: flex; flex-direction: column; gap: 10px; }
+.camera-modal-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #e2e8f0; font-weight: 600; }
+.camera-modal-content img { max-width: 100%; max-height: 75vh; border-radius: 6px; display: block; }
 
 .last-vehicle-card { background: var(--card); border-radius: 8px; padding: 16px; margin-bottom: 16px; max-width: 420px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
 .last-vehicle-card img { width: 100%; max-height: 260px; object-fit: cover; border-radius: 6px; }

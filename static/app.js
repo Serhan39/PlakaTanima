@@ -97,9 +97,11 @@ function switchTab(tab) {
 // src="/api/cameras/{id}/stream?token=...">) baglaniyoruz; JS tarafinda
 // polling/interval yok, tarayici karelari geldikce kendisi gosteriyor.
 let liveCameraIds = [];
+const liveCameraNames = {}; // cameraId -> ad (modal basligi icin)
 
 async function setupLiveCameraPreview() {
   await loadLiveCameraGrid();
+  setupCameraModal();
 }
 
 async function loadLiveCameraGrid() {
@@ -109,6 +111,7 @@ async function loadLiveCameraGrid() {
     const cameras = await apiFetch("/api/cameras");
     const usable = cameras.filter((c) => c.rtsp_url);
     liveCameraIds = usable.map((c) => c.id);
+    usable.forEach((c) => { liveCameraNames[c.id] = c.name; });
 
     if (usable.length === 0) {
       grid.innerHTML = "";
@@ -120,7 +123,7 @@ async function loadLiveCameraGrid() {
     grid.innerHTML = usable
       .map(
         (c) => `<div class="live-camera-tile">
-          <div class="live-camera-frame">
+          <div class="live-camera-frame" ondblclick="openCameraModal(${c.id})" title="Buyutmek icin cift tiklayin">
             <img id="live-camera-img-${c.id}" alt="${c.name}" style="display:none;">
             <div id="live-camera-placeholder-${c.id}" class="live-camera-placeholder">Baglaniliyor...</div>
           </div>
@@ -133,6 +136,36 @@ async function loadLiveCameraGrid() {
   } catch (err) {
     // kamera listesi alinamadiysa sessizce yoksay, mevcut grid yerinde kalir
   }
+}
+
+function setupCameraModal() {
+  document.getElementById("camera-modal-backdrop").addEventListener("click", closeCameraModal);
+  document.getElementById("camera-modal-close").addEventListener("click", closeCameraModal);
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeCameraModal();
+  });
+}
+
+async function openCameraModal(cameraId) {
+  const modal = document.getElementById("camera-modal");
+  const modalImg = document.getElementById("camera-modal-img");
+  document.getElementById("camera-modal-title").textContent = liveCameraNames[cameraId] || "";
+  modal.style.display = "flex";
+
+  try {
+    const { token } = await apiFetch(`/api/cameras/${cameraId}/stream-token`, { method: "POST" });
+    modalImg.src = `/api/cameras/${cameraId}/stream?token=${encodeURIComponent(token)}`;
+  } catch (err) {
+    closeCameraModal();
+    alert("Buyutulmus goruntuye baglanilamadi: " + err.message);
+  }
+}
+
+function closeCameraModal() {
+  const modal = document.getElementById("camera-modal");
+  const modalImg = document.getElementById("camera-modal-img");
+  modal.style.display = "none";
+  modalImg.src = ""; // akisi kapat, gereksiz bant genisligi harcamasin
 }
 
 async function startLiveCameraPolling() {

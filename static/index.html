@@ -33,8 +33,20 @@
 
       <div class="live-camera-widget" id="live-camera-widget">
         <h3>Canli Kameralar</h3>
+        <p class="hint">Bir kameraya cift tiklayarak buyutebilirsiniz.</p>
         <div class="live-camera-grid" id="live-camera-grid">
           <div class="live-camera-empty" id="live-camera-empty">Kamera bulunamadi</div>
+        </div>
+      </div>
+
+      <div class="camera-modal" id="camera-modal" style="display:none;">
+        <div class="camera-modal-backdrop" id="camera-modal-backdrop"></div>
+        <div class="camera-modal-content">
+          <div class="camera-modal-header">
+            <span id="camera-modal-title"></span>
+            <button id="camera-modal-close" class="ghost-btn" type="button">Kapat</button>
+          </div>
+          <img id="camera-modal-img" alt="Buyutulmus canli goruntu">
         </div>
       </div>
 
