@@ -31,7 +31,7 @@ import requests
 API_BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:8000")
 WORKER_USERNAME = os.environ.get("WORKER_USERNAME", "")
 WORKER_PASSWORD = os.environ.get("WORKER_PASSWORD", "")
-DETECT_INTERVAL_SECONDS = float(os.environ.get("CAPTURE_INTERVAL_SECONDS", "2"))
+DETECT_INTERVAL_SECONDS = float(os.environ.get("CAPTURE_INTERVAL_SECONDS", "0.3"))
 PREVIEW_INTERVAL_SECONDS = float(os.environ.get("PREVIEW_INTERVAL_SECONDS", "0.1"))
 PREVIEW_JPEG_QUALITY = int(os.environ.get("PREVIEW_JPEG_QUALITY", "70"))
 CAMERA_LIST_REFRESH_SECONDS = float(os.environ.get("CAMERA_LIST_REFRESH_SECONDS", "10"))

@@ -1,6 +1,7 @@
 """Bir aracin kamera onunden gecisi surerken, ayni plaka icin ardisik
-birkac kare (worker CAPTURE_INTERVAL_SECONDS=2sn'de bir tespit dener,
-yani bir arac ~10-12sn goruntude kalirsa 5-6 deneme birikir) BAGIMSIZ
+birkac kare (worker varsayilan olarak CAPTURE_INTERVAL_SECONDS=0.3sn'de
+bir tespit dener - hizli gecen bir arac goruntude sadece 1-2sn kalsa
+bile birkac deneme birikebilsin diye kisa tutulur) BAGIMSIZ
 OKUMALAR olarak tek tek kaydedilmek yerine, kisa sureli bir "patlama"
 (burst) havuzunda toplanir; havuz suresi dolunca EN COK TEKRAR EDEN
 okuma (cogunluk oylamasi) TEK bir DetectionLog olarak kaydedilir.
