@@ -53,6 +53,11 @@ main { padding: 24px; max-width: 1100px; margin: 0 auto; }
 .live-camera-label { font-size: 13px; font-weight: 600; color: #475569; }
 .live-camera-empty { color: #94a3b8; padding: 20px 0; }
 
+.equipment-gate-frame { resize: both; overflow: hidden; min-width: 200px; min-height: 120px; width: 320px; height: 180px; cursor: nwse-resize; }
+.equipment-gate-frame canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.equipment-gate-status { position: absolute; top: 6px; left: 6px; font-size: 11px; padding: 2px 8px; border-radius: 10px; background: rgba(15,23,42,.7); color: #e2e8f0; }
+.equipment-gate-status.online { background: rgba(22,163,74,.85); }
+
 .camera-modal { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; }
 .camera-modal-backdrop { position: absolute; inset: 0; background: rgba(15, 23, 42, .85); }
 .camera-modal-content { position: relative; z-index: 1; background: #0f172a; border-radius: 8px; padding: 12px; max-width: min(90vw, 1100px); max-height: 90vh; display: flex; flex-direction: column; gap: 10px; }

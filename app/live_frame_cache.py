@@ -7,21 +7,25 @@ yazan taraf app/camera_worker.py'dir - zaten tespit icin actigi TEK RTSP
 baglantisini yeniden kullanir, ekstra kamera baglantisi acmaz.
 
 Tek uvicorn sureci varsayimiyla (docker-compose'da --workers kullanilmiyor)
-process-ici bellek yeterlidir, ayri bir cache servisine (Redis vb.) gerek yok."""
+process-ici bellek yeterlidir, ayri bir cache servisine (Redis vb.) gerek yok.
+
+Anahtar kameralar icin dogrudan camera_id (int), kapilar icin ise
+"gate-{gate_id}" (str) seklindedir - iki farkli tablonun ID uzayi ayni
+sozlukte karismasin diye."""
 
 import threading
 import time
 
 _lock = threading.Lock()
-_frames: dict[int, tuple[bytes, float]] = {}
+_frames: dict[int | str, tuple[bytes, float]] = {}
 
 
-def set_frame(camera_id: int, jpeg_bytes: bytes) -> None:
+def set_frame(key: int | str, jpeg_bytes: bytes) -> None:
     with _lock:
-        _frames[camera_id] = (jpeg_bytes, time.monotonic())
+        _frames[key] = (jpeg_bytes, time.monotonic())
 
 
-def get_frame(camera_id: int) -> bytes | None:
+def get_frame(key: int | str) -> bytes | None:
     with _lock:
-        entry = _frames.get(camera_id)
+        entry = _frames.get(key)
     return entry[0] if entry else None

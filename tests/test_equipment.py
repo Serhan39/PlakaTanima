@@ -1,18 +1,31 @@
+import asyncio
 import os
 from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret")
 os.environ.setdefault("WATCHLIST_ENCRYPTION_KEY", "Gz3n5J9y8k2p6xQm1wZ7fL0oR4sT8vU2cA6bD9eH3iM=")
 
+from fastapi import UploadFile
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from app import live_frame_cache
 from app.crypto import decrypt_text, deterministic_hash, encrypt_text
 from app.database import Base
 from app.models import CameraDirection, EquipmentCrossingLog, EquipmentGate, EquipmentState, EquipmentZone
-from app.routers.equipment import apply_crossing, crossing_logs, time_report, update_gate_line
-from app.schemas import EquipmentGateLineUpdate
+from app.routers.equipment import (
+    apply_crossing,
+    create_gate_stream_token,
+    crossing_logs,
+    gate_live_state,
+    push_gate_live_frame,
+    time_report,
+    update_gate_line,
+)
+from app.schemas import EquipmentGateLineUpdate, EquipmentLiveBox, EquipmentLiveStateSubmit
 from app.settings_store import get_setting, set_setting
+from app.stream_tokens import resolve_token
 from app.vision.ocr import _best_candidate
 
 
@@ -284,3 +297,51 @@ def test_loose_ocr_candidate_does_not_require_turkish_plate_format():
 
     strict_text, _ = _best_candidate(candidates, strict=True)
     assert strict_text != "ISMAK01"
+
+
+def test_gate_stream_token_resolves_to_that_gates_frame_key():
+    # /gates/{id}/stream ucu, tokeni "gate-{id}" anahtarina cozerek dogru
+    # kapinin canli karesini servis etmeli - kameralarla ayni token deseni
+    # (bkz. app/stream_tokens.py) ama farkli ID uzayinda (str anahtar).
+    db = _session()
+    exit_a, entry_b = _zone_and_gates(db)
+
+    token_a = create_gate_stream_token(exit_a.id, db=db, _=None)
+    token_b = create_gate_stream_token(entry_b.id, db=db, _=None)
+
+    assert resolve_token(token_a.token) == f"gate-{exit_a.id}"
+    assert resolve_token(token_b.token) == f"gate-{entry_b.id}"
+    assert token_a.token != token_b.token
+
+
+def test_push_gate_live_frame_writes_to_cache_under_gate_key():
+    import io
+
+    db = _session()
+    exit_a, _ = _zone_and_gates(db)
+    upload = UploadFile(file=io.BytesIO(b"sahte-jpeg-veri"), filename="frame.jpg")
+
+    asyncio.run(push_gate_live_frame(exit_a.id, file=upload, db=db, _=None))
+
+    assert live_frame_cache.get_frame(f"gate-{exit_a.id}") == b"sahte-jpeg-veri"
+
+
+def test_gate_live_state_broadcasts_boxes_with_type_field():
+    # Panel /ws/equipment uzerinden "type": "live_state" mesajlarini
+    # "type": "crossing" olanlardan ayirt edip farkli isliyor (sari kutu
+    # cizimi vs. gecis kaydi/log guncellemesi) - bu yuzden alan zorunlu.
+    db = _session()
+    exit_a, _ = _zone_and_gates(db)
+    payload = EquipmentLiveStateSubmit(
+        boxes=[EquipmentLiveBox(track_id=1, box=[0.1, 0.2, 0.3, 0.4], crossed=False, code="IS-001")]
+    )
+
+    with patch("app.routers.equipment.broadcast_equipment_event") as mock_broadcast:
+        asyncio.run(gate_live_state(exit_a.id, payload, db=db, _=None))
+
+    mock_broadcast.assert_called_once()
+    (message,) = mock_broadcast.call_args[0]
+    assert message["type"] == "live_state"
+    assert message["gate_id"] == exit_a.id
+    assert message["boxes"][0]["crossed"] is False
+    assert message["boxes"][0]["code"] == "IS-001"

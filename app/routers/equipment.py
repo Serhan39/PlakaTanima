@@ -1,13 +1,17 @@
+import asyncio
 from datetime import datetime, timedelta, timezone
 
 import cv2
 import numpy as np
-from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.crypto import decrypt_text, deterministic_hash, encrypt_text
 from app.database import get_db
+from app.live_frame_cache import get_frame as get_live_frame
+from app.live_frame_cache import set_frame as set_live_frame
 from app.models import (
     CameraDirection,
     EquipmentCrossingLog,
@@ -24,17 +28,27 @@ from app.schemas import (
     EquipmentGateCreate,
     EquipmentGateLineUpdate,
     EquipmentGateRead,
+    EquipmentLiveStateSubmit,
     EquipmentStatusRead,
     EquipmentTimeReportEntry,
     EquipmentZoneCreate,
     EquipmentZoneDuration,
     EquipmentZoneRead,
     FeatureFlag,
+    StreamTokenRead,
 )
 from app.security import get_current_user, require_equipment_permission, require_roles
 from app.settings_store import get_setting, set_setting
+from app.stream_tokens import mint_token, resolve_token
 from app.vision.pipeline import build_default_detector, recognize_equipment_codes
 from app.websocket_manager import broadcast_equipment_event
+
+_STREAM_FRAME_INTERVAL_SECONDS = 0.1
+_STREAM_FIRST_FRAME_TIMEOUT_SECONDS = 10
+
+
+def _gate_frame_key(gate_id: int) -> str:
+    return f"gate-{gate_id}"
 
 router = APIRouter(prefix="/api/equipment", tags=["equipment"])
 
@@ -158,6 +172,83 @@ def gate_preview(gate_id: int, db: Session = Depends(get_db)):
     if not ok:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Goruntu kodlanamadi")
     return Response(content=buffer.tobytes(), media_type="image/jpeg")
+
+
+@router.post("/gates/{gate_id}/stream-token", response_model=StreamTokenRead)
+def create_gate_stream_token(gate_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    """Kapinin canli MJPEG akisi icin kisa omurlu token uretir - ayni
+    /api/cameras/{id}/stream-token deseni (bkz. app/stream_tokens.py)."""
+    if not db.get(EquipmentGate, gate_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Kapi bulunamadi")
+    return StreamTokenRead(token=mint_token(_gate_frame_key(gate_id)))
+
+
+@router.get("/gates/{gate_id}/stream")
+async def gate_stream(gate_id: int, token: str, request: Request, db: Session = Depends(get_db)):
+    """Kapinin canli goruntusunu MJPEG olarak yayinlar. equipment-worker'in
+    (app/equipment_gate_worker.py) cizgi takibi icin zaten actigi RTSP
+    baglantisindan okudugu her kareyi live_frame_cache'e yazmasiyla beslenir -
+    bu uc ekstra bir kamera baglantisi acmaz (bkz. app/routers/cameras.py
+    camera_stream, ayni desen)."""
+    if resolve_token(token) != _gate_frame_key(gate_id):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Gecersiz veya suresi dolmus token")
+    if not db.get(EquipmentGate, gate_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Kapi bulunamadi")
+
+    async def frame_generator():
+        got_first_frame = False
+        waited_seconds = 0.0
+        while True:
+            if await request.is_disconnected():
+                break
+            frame = get_live_frame(_gate_frame_key(gate_id))
+            if frame is not None:
+                got_first_frame = True
+                yield (
+                    b"--frame\r\n"
+                    b"Content-Type: image/jpeg\r\n"
+                    b"Content-Length: " + str(len(frame)).encode() + b"\r\n\r\n" + frame + b"\r\n"
+                )
+            elif not got_first_frame:
+                waited_seconds += _STREAM_FRAME_INTERVAL_SECONDS
+                if waited_seconds >= _STREAM_FIRST_FRAME_TIMEOUT_SECONDS:
+                    break
+            await asyncio.sleep(_STREAM_FRAME_INTERVAL_SECONDS)
+
+    return StreamingResponse(frame_generator(), media_type="multipart/x-mixed-replace; boundary=frame")
+
+
+@router.post("/gates/{gate_id}/live-frame", status_code=status.HTTP_204_NO_CONTENT)
+async def push_gate_live_frame(
+    gate_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """equipment_gate_worker'in (bkz. _preview_loop), cizgi takibi icin
+    zaten actigi RTSP baglantisindan okudugu kareyi canli goruntu
+    onbellegine yazmak icin cagirdigi uc - /api/cameras/{id}/live-frame
+    ile ayni desen (bkz. app/routers/cameras.py::push_live_frame)."""
+    if not db.get(EquipmentGate, gate_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Kapi bulunamadi")
+    data = await file.read()
+    set_live_frame(_gate_frame_key(gate_id), data)
+
+
+@router.post("/gates/{gate_id}/live-state", status_code=status.HTTP_204_NO_CONTENT)
+async def gate_live_state(
+    gate_id: int, payload: EquipmentLiveStateSubmit, db: Session = Depends(get_db), _: User = Depends(get_current_user)
+):
+    """equipment_gate_worker'in her isleme adiminda (bkz. TRACKER_FPS) o an
+    karede gorulen araclarin kutularini bildirdigi uc. Panel bunu /ws/equipment
+    uzerinden alip canli goruntunun uzerine sari (henuz gecmedi) / yesil
+    (cizgiyi gecti) kutu olarak cizer - gercek bir gecis kaydi degildir,
+    sadece anlik gorsel geri bildirimdir."""
+    if not db.get(EquipmentGate, gate_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Kapi bulunamadi")
+    await broadcast_equipment_event(
+        {"type": "live_state", "gate_id": gate_id, "boxes": [b.model_dump() for b in payload.boxes]}
+    )
 
 
 # --- Durum ve kayitlar ------------------------------------------------------
@@ -416,7 +507,7 @@ async def detect_equipment(
     db.commit()
 
     if events:
-        await broadcast_equipment_event({"gate_id": gate.id, "events": events})
+        await broadcast_equipment_event({"type": "crossing", "gate_id": gate.id, "events": events})
     return events
 
 
@@ -439,7 +530,7 @@ async def submit_crossing(
     db.commit()
 
     if event:
-        await broadcast_equipment_event({"gate_id": gate.id, "events": [event]})
+        await broadcast_equipment_event({"type": "crossing", "gate_id": gate.id, "events": [event]})
         return event
     return {"debounced": True}
 
@@ -459,6 +550,6 @@ async def submit_manual_crossing(payload: EquipmentCrossingManualSubmit, db: Ses
     db.commit()
 
     if event:
-        await broadcast_equipment_event({"gate_id": gate.id, "events": [event]})
+        await broadcast_equipment_event({"type": "crossing", "gate_id": gate.id, "events": [event]})
         return event
     return {"debounced": True}

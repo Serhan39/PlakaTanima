@@ -41,6 +41,8 @@ WORKER_PASSWORD = os.environ.get("EQUIPMENT_WORKER_PASSWORD", os.environ.get("WO
 TRACKER_FPS = float(os.environ.get("EQUIPMENT_TRACKER_FPS", "2"))
 GATE_REFRESH_SECONDS = float(os.environ.get("EQUIPMENT_GATE_REFRESH_SECONDS", "60"))
 MIN_CODE_LENGTH = int(os.environ.get("EQUIPMENT_MIN_CODE_LENGTH", "3"))
+PREVIEW_INTERVAL_SECONDS = float(os.environ.get("EQUIPMENT_PREVIEW_INTERVAL_SECONDS", "0.2"))
+PREVIEW_JPEG_QUALITY = int(os.environ.get("EQUIPMENT_PREVIEW_JPEG_QUALITY", "70"))
 
 _stop_event = threading.Event()
 
@@ -65,6 +67,51 @@ def _submit_crossing(token: str, gate_id: int, code: str, confidence: float, dir
         )
     except requests.RequestException as exc:
         print(f"[equipment-worker] Gecis bildirilemedi (kapi {gate_id}): {exc}")
+
+
+def _push_preview(gate_id: int, jpeg_bytes: bytes, token: str) -> None:
+    """Panelin canli goruntu icin baglanacagi akisi besler (bkz.
+    /api/equipment/gates/{gate_id}/stream, app/camera_worker.py'deki
+    _push_preview ile ayni desen). Ikincil/gorsel bir ozelliktir - hata
+    tespit/takip akisini asla kesmemeli."""
+    try:
+        requests.post(
+            f"{API_BASE_URL}/api/equipment/gates/{gate_id}/live-frame",
+            files={"file": ("frame.jpg", jpeg_bytes, "image/jpeg")},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=5,
+        )
+    except requests.RequestException:
+        pass
+
+
+def _submit_live_state(token: str, gate_id: int, boxes: list[dict]) -> None:
+    """O an karede gorulen araclarin kutularini bildirir - panel bunu
+    canli goruntunun uzerine sari (henuz gecmedi) / yesil (cizgiyi gecti)
+    kutu olarak cizer. Ikincil/gorsel bir ozelliktir, hata sessizce yutulur."""
+    try:
+        requests.post(
+            f"{API_BASE_URL}/api/equipment/gates/{gate_id}/live-state",
+            json={"boxes": boxes},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=5,
+        )
+    except requests.RequestException:
+        pass
+
+
+def _preview_loop(gate: dict, latest: dict, frame_lock: threading.Lock, get_token) -> None:
+    """Okuma dongusunden bagimsiz, sabit araliklarla (PREVIEW_INTERVAL_SECONDS)
+    en son kareyi dusuk kalitede panelin canli goruntu akisina gonderir."""
+    while not _stop_event.is_set():
+        time.sleep(PREVIEW_INTERVAL_SECONDS)
+        with frame_lock:
+            frame = latest["frame"]
+        if frame is None:
+            continue
+        ok, buffer = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), PREVIEW_JPEG_QUALITY])
+        if ok:
+            _push_preview(gate["id"], buffer.tobytes(), get_token())
 
 
 def _reader_loop(gate: dict, latest: dict, frame_lock: threading.Lock) -> None:
@@ -110,6 +157,8 @@ def _gate_loop(gate: dict, get_token) -> None:
     frame_lock = threading.Lock()
     reader = threading.Thread(target=_reader_loop, args=(gate, latest, frame_lock), daemon=True)
     reader.start()
+    preview = threading.Thread(target=_preview_loop, args=(gate, latest, frame_lock, get_token), daemon=True)
+    preview.start()
 
     print(f"[equipment-worker] Kapi izleniyor (cizgi takibi): {gate['name']}")
     while not _stop_event.is_set():
@@ -130,7 +179,8 @@ def _gate_loop(gate: dict, get_token) -> None:
                 code = ""
             cx = ((box.x1 + box.x2) / 2) / width
             cy = ((box.y1 + box.y2) / 2) / height
-            detections.append((cx, cy, code, conf))
+            normalized_box = (box.x1 / width, box.y1 / height, box.x2 / width, box.y2 / height)
+            detections.append((cx, cy, code, conf, normalized_box))
 
         for track in tracker.update(detections):
             direction = CameraDirection.ENTRY if is_entry_crossing(track.prev_side, inside_positive) else CameraDirection.EXIT
@@ -140,7 +190,15 @@ def _gate_loop(gate: dict, get_token) -> None:
             else:
                 print(f"[equipment-worker] Cizgi gecisi tespit edildi ama plaka okunamadi: {gate['name']} ({direction.value})")
 
+        live_boxes = [
+            {"track_id": t.id, "box": list(t.box), "crossed": t.crossed, "code": t.best_code}
+            for t in tracker.active_tracks()
+            if t.box is not None
+        ]
+        _submit_live_state(get_token(), gate["id"], live_boxes)
+
     reader.join(timeout=2)
+    preview.join(timeout=2)
 
 
 def _login_with_retry() -> str:

@@ -79,6 +79,47 @@ def test_stale_tracks_are_dropped_after_missed_frames():
     assert crossed == []
 
 
+def test_update_accepts_and_stores_box_for_live_overlay():
+    # Panelde canli goruntude aracin kutusunu cizebilmek icin, detections
+    # 5. eleman olarak box (x1,y1,x2,y2) tasiyabilmeli ve bu, ilgili track'e
+    # islenmeli.
+    tracker = LineCrossingTracker(0, 0.5, 1, 0.5)
+    tracker.update([(0.5, 0.2, "IS-001", 0.9, (0.45, 0.15, 0.55, 0.25))])
+    (track,) = tracker.active_tracks()
+    assert track.box == (0.45, 0.15, 0.55, 0.25)
+
+
+def test_update_without_box_still_works_backward_compatible():
+    # Eski 4 elemanli detections (box yok) hala calismali - box None kalir.
+    tracker = LineCrossingTracker(0, 0.5, 1, 0.5)
+    tracker.update([(0.5, 0.2, "IS-001", 0.9)])
+    (track,) = tracker.active_tracks()
+    assert track.box is None
+
+
+def test_active_tracks_only_includes_tracks_seen_this_frame():
+    tracker = LineCrossingTracker(0, 0.5, 1, 0.5, max_missed_frames=2)
+    tracker.update([(0.5, 0.2, "IS-001", 0.9, (0.4, 0.1, 0.6, 0.3))])
+    assert len(tracker.active_tracks()) == 1
+
+    tracker.update([])  # bu karede hic tespit yok
+    assert tracker.active_tracks() == []
+
+
+def test_active_tracks_reflects_crossed_flag_for_color_switch():
+    # Panel: cizgiyi henuz gecmemis izler sari, gecmis izler yesil cizilir -
+    # bu, active_tracks()'in dondurdugu track.crossed uzerinden belirlenir.
+    tracker = LineCrossingTracker(0, 0.5, 1, 0.5)
+    for y in [0.20, 0.30, 0.40, 0.48]:
+        tracker.update([(0.5, y, "IS-001", 0.9, (0.4, y - 0.05, 0.6, y + 0.05))])
+    (track,) = tracker.active_tracks()
+    assert track.crossed is False
+
+    tracker.update([(0.5, 0.55, "IS-001", 0.9, (0.4, 0.5, 0.6, 0.6))])
+    (track,) = tracker.active_tracks()
+    assert track.crossed is True
+
+
 def test_is_entry_crossing_matches_inside_reference_side():
     # inside referansi ustte (pozitif taraf farz edelim): ustte kalan gecis GIRIS,
     # altta kalan gecis CIKIS olmali.

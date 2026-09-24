@@ -85,7 +85,7 @@ function switchTab(tab) {
   if (tab === "cameras") loadCameras();
   if (tab === "logs") loadLogs();
   if (tab === "reports") loadReportCameraOptions().then(loadReports);
-  if (tab === "equipment") { loadZones(); loadEquipmentStatus(); }
+  if (tab === "equipment") { loadZones(); loadEquipmentStatus(); startEquipmentGateStreams(); } else { stopEquipmentGateStreams(); }
   if (tab === "users") loadUsers();
   if (tab === "live") startLiveCameraPolling(); else stopLiveCameraPolling();
 }
@@ -938,6 +938,138 @@ async function loadGates() {
   const manualCurrent = manualGateSelect.value;
   manualGateSelect.innerHTML = gates.map((g) => `<option value="${g.id}">${g.name}</option>`).join("");
   if (manualCurrent) manualGateSelect.value = manualCurrent;
+
+  loadEquipmentGateGrid(gates);
+}
+
+// Kapi canli goruntu izgarasi: her kapi icin MJPEG akisi (kameralarla ayni
+// /stream deseni, bkz. connectLiveCameraStream) + uzerine aracin kutusunu
+// (sari = tespit edildi, yesil = cizgiyi gecti) cizen bir <canvas>. Kare,
+// CSS "resize: both" ile kullanicinin kosesinden surukleyerek buyutup
+// kucultebilecegi sekilde tasarlandi (bkz. .equipment-gate-frame).
+let equipmentGateIds = [];
+const equipmentGateNames = {}; // gateId -> ad
+const equipmentGateCanvasCtx = {}; // gateId -> CanvasRenderingContext2D
+const equipmentGateLastBoxes = {}; // gateId -> son bildirilen kutular
+
+function loadEquipmentGateGrid(gates) {
+  const grid = document.getElementById("equipment-gate-grid");
+  const emptyMsg = document.getElementById("equipment-gate-empty");
+  const usable = gates.filter((g) => g.rtsp_url);
+  equipmentGateIds = usable.map((g) => g.id);
+  usable.forEach((g) => { equipmentGateNames[g.id] = g.name; });
+
+  if (usable.length === 0) {
+    grid.innerHTML = "";
+    grid.appendChild(emptyMsg);
+    emptyMsg.textContent = "Canli izlenebilir kapi yok (once RTSP adresli bir kapi ekleyin)";
+    return;
+  }
+
+  grid.innerHTML = usable
+    .map(
+      (g) => `<div class="live-camera-tile">
+        <div class="live-camera-frame equipment-gate-frame" id="equipment-gate-frame-${g.id}">
+          <img id="equipment-gate-img-${g.id}" alt="${g.name}" style="display:none;">
+          <canvas id="equipment-gate-canvas-${g.id}"></canvas>
+          <div id="equipment-gate-placeholder-${g.id}" class="live-camera-placeholder">Baglaniliyor...</div>
+          <div id="equipment-gate-pill-${g.id}" class="equipment-gate-status">-</div>
+        </div>
+        <div class="live-camera-label">${g.name}</div>
+      </div>`
+    )
+    .join("");
+
+  usable.forEach((g) => {
+    const canvas = document.getElementById(`equipment-gate-canvas-${g.id}`);
+    equipmentGateCanvasCtx[g.id] = canvas.getContext("2d");
+    new ResizeObserver(() => resizeEquipmentGateCanvas(g.id)).observe(document.getElementById(`equipment-gate-frame-${g.id}`));
+  });
+
+  if (document.getElementById("tab-equipment").classList.contains("active")) startEquipmentGateStreams();
+}
+
+function resizeEquipmentGateCanvas(gateId) {
+  const frame = document.getElementById(`equipment-gate-frame-${gateId}`);
+  const canvas = document.getElementById(`equipment-gate-canvas-${gateId}`);
+  if (!frame || !canvas) return;
+  canvas.width = frame.clientWidth;
+  canvas.height = frame.clientHeight;
+  drawEquipmentGateBoxes(gateId);
+}
+
+function startEquipmentGateStreams() {
+  equipmentGateIds.forEach(connectEquipmentGateStream);
+}
+
+function stopEquipmentGateStreams() {
+  equipmentGateIds.forEach((id) => {
+    const img = document.getElementById(`equipment-gate-img-${id}`);
+    if (img) img.src = "";
+  });
+}
+
+async function connectEquipmentGateStream(gateId) {
+  const img = document.getElementById(`equipment-gate-img-${gateId}`);
+  const placeholder = document.getElementById(`equipment-gate-placeholder-${gateId}`);
+  const pill = document.getElementById(`equipment-gate-pill-${gateId}`);
+  if (!img || !placeholder) return; // izgara yeniden olusturulmus olabilir
+
+  try {
+    const { token } = await apiFetch(`/api/equipment/gates/${gateId}/stream-token`, { method: "POST" });
+    img.onload = () => {
+      img.style.display = "block";
+      placeholder.style.display = "none";
+      if (pill) { pill.textContent = "Canli"; pill.classList.add("online"); }
+      resizeEquipmentGateCanvas(gateId);
+    };
+    img.onerror = () => {
+      img.style.display = "none";
+      placeholder.style.display = "block";
+      placeholder.textContent = "Baglanti kesildi, yeniden deneniyor...";
+      if (pill) { pill.textContent = "-"; pill.classList.remove("online"); }
+      setTimeout(() => {
+        if (document.getElementById("tab-equipment").classList.contains("active")) connectEquipmentGateStream(gateId);
+      }, 3000);
+    };
+    img.src = `/api/equipment/gates/${gateId}/stream?token=${encodeURIComponent(token)}`;
+  } catch (err) {
+    placeholder.textContent = "Kapiya baglanilamiyor";
+  }
+}
+
+function drawEquipmentGateBoxes(gateId) {
+  const ctx = equipmentGateCanvasCtx[gateId];
+  const canvas = document.getElementById(`equipment-gate-canvas-${gateId}`);
+  if (!ctx || !canvas) return;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  const boxes = equipmentGateLastBoxes[gateId] || [];
+  boxes.forEach((b) => {
+    const [x1, y1, x2, y2] = b.box;
+    const color = b.crossed ? "#16a34a" : "#ca8a04";
+    const px1 = x1 * canvas.width, py1 = y1 * canvas.height;
+    const width = (x2 - x1) * canvas.width, height = (y2 - y1) * canvas.height;
+
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = color;
+    ctx.strokeRect(px1, py1, width, height);
+
+    if (b.code) {
+      ctx.font = "bold 13px sans-serif";
+      const label = b.code;
+      const labelWidth = ctx.measureText(label).width + 8;
+      ctx.fillStyle = color;
+      ctx.fillRect(px1, Math.max(0, py1 - 18), labelWidth, 18);
+      ctx.fillStyle = "#0f172a";
+      ctx.fillText(label, px1 + 4, Math.max(12, py1 - 5));
+    }
+  });
+}
+
+function handleEquipmentLiveStateMessage(data) {
+  equipmentGateLastBoxes[data.gate_id] = data.boxes || [];
+  drawEquipmentGateBoxes(data.gate_id);
 }
 
 async function deleteGate(id) {
@@ -1189,6 +1321,10 @@ function connectEquipmentLiveFeed() {
   };
   socket.onmessage = (event) => {
     const data = JSON.parse(event.data);
+    if (data.type === "live_state") {
+      handleEquipmentLiveStateMessage(data);
+      return;
+    }
     (data.events || []).forEach((e) => {
       const item = document.createElement("div");
       item.className = `detection-item ${e.direction === "exit" ? "exit" : "entry"}`;

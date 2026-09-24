@@ -32,6 +32,7 @@ class Track:
     best_confidence: float = 0.0
     frames_since_seen: int = 0
     crossed: bool = False
+    box: tuple[float, float, float, float] | None = None
 
 
 @dataclass
@@ -40,6 +41,7 @@ class _Detection:
     cy: float
     code: str
     confidence: float
+    box: tuple[float, float, float, float] | None = None
 
 
 class LineCrossingTracker:
@@ -64,11 +66,20 @@ class LineCrossingTracker:
         self._tracks: list[Track] = []
         self._next_id = 1
 
-    def update(self, detections: list[tuple[float, float, str, float]]) -> list[Track]:
-        """detections: [(cx, cy, code, confidence), ...] normalize edilmis
-        (0-1) merkez noktalari. code bos string olabilir (OCR basarisiz).
+    def update(self, detections: list[tuple]) -> list[Track]:
+        """detections: [(cx, cy, code, confidence), ...] ya da kutu bilgisiyle
+        birlikte [(cx, cy, code, confidence, box), ...] - cx/cy normalize
+        edilmis (0-1) merkez noktalari, box ise normalize (x1,y1,x2,y2) veya
+        None. code bos string olabilir (OCR basarisiz).
         Bu karede cizgiyi yeni gecen track'lerin listesini dondurur."""
-        parsed = [_Detection(cx, cy, code, confidence) for cx, cy, code, confidence in detections]
+        parsed = []
+        for det in detections:
+            if len(det) == 5:
+                cx, cy, code, confidence, box = det
+            else:
+                cx, cy, code, confidence = det
+                box = None
+            parsed.append(_Detection(cx, cy, code, confidence, box))
         matched_ids: set[int] = set()
         newly_crossed: list[Track] = []
 
@@ -98,6 +109,7 @@ class LineCrossingTracker:
                 track.best_confidence = det.confidence
 
             track.cx, track.cy = det.cx, det.cy
+            track.box = det.box
             track.prev_side = side
 
         for track in self._tracks:
@@ -107,6 +119,11 @@ class LineCrossingTracker:
         self._tracks = [t for t in self._tracks if t.frames_since_seen <= self._max_missed_frames]
 
         return newly_crossed
+
+    def active_tracks(self) -> list[Track]:
+        """Bu KAREDE eslenmis (frames_since_seen == 0) izleri dondurur -
+        canli goruntude sari/yesil kutu cizmek icin (bkz. equipment_gate_worker)."""
+        return [t for t in self._tracks if t.frames_since_seen == 0]
 
     def _find_nearest(self, cx: float, cy: float, matched_ids: set[int]) -> Track | None:
         best: Track | None = None

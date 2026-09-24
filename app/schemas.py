@@ -217,6 +217,17 @@ class EquipmentCrossingRead(BaseModel):
     created_at: datetime
 
 
+class EquipmentLiveBox(BaseModel):
+    track_id: int
+    box: list[float]  # [x1, y1, x2, y2], normalize 0-1
+    crossed: bool = False
+    code: str = ""
+
+
+class EquipmentLiveStateSubmit(BaseModel):
+    boxes: list[EquipmentLiveBox] = []
+
+
 class EquipmentZoneDuration(BaseModel):
     zone_id: int | None
     zone_name: str

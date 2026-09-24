@@ -122,6 +122,8 @@ def test_gate_loop_submits_crossing_when_tracker_detects_one():
     with patch.object(equipment_gate_worker, "build_default_detector", return_value=fake_detector), \
          patch.object(equipment_gate_worker, "read_equipment_code", return_value=("ABC123", 0.9)), \
          patch.object(equipment_gate_worker, "_reader_loop", side_effect=fake_reader), \
+         patch.object(equipment_gate_worker, "_preview_loop"), \
+         patch.object(equipment_gate_worker, "_submit_live_state"), \
          patch.object(equipment_gate_worker, "_submit_crossing") as mock_submit:
 
         equipment_gate_worker._stop_event.clear()
@@ -135,3 +137,61 @@ def test_gate_loop_submits_crossing_when_tracker_detects_one():
     assert mock_submit.called
     submitted_code = mock_submit.call_args[0][2]
     assert submitted_code == "ABC123"
+
+
+def test_gate_loop_reports_live_box_state_with_crossed_flag():
+    # Panelde canli goruntude aracin kutusu sari (henuz gecmedi) -> yesil
+    # (cizgiyi gecti) olarak boyanabilmesi icin, her isleme adiminda o an
+    # gorulen tum izlerin kutulari + crossed durumu bildirilmeli.
+    gate = {
+        "id": 9,
+        "name": "Test Kapi 2",
+        "rtsp_url": "rtsp://sahte",
+        "line_x1": 0.5, "line_y1": 0.0, "line_x2": 0.5, "line_y2": 1.0,
+        "inside_x": 0.9, "inside_y": 0.5,
+    }
+
+    frames = [MagicMock(shape=(100, 200, 3))]
+
+    class _FakeBox:
+        def __init__(self, x1, y1, x2, y2):
+            self.x1, self.y1, self.x2, self.y2 = x1, y1, x2, y2
+
+        def crop(self, frame):
+            return MagicMock(size=100)
+
+    fake_detector = MagicMock()
+    fake_detector.detect.return_value = [_FakeBox(80, 40, 100, 60)]  # cizginin solunda, henuz gecmedi
+
+    def fake_reader(gate_arg, latest, frame_lock):
+        for frame in frames:
+            with frame_lock:
+                latest["frame"] = frame
+            time.sleep(0.03)
+        while not equipment_gate_worker._stop_event.is_set():
+            time.sleep(0.01)
+
+    equipment_gate_worker.TRACKER_FPS = 50
+
+    with patch.object(equipment_gate_worker, "build_default_detector", return_value=fake_detector), \
+         patch.object(equipment_gate_worker, "read_equipment_code", return_value=("XYZ999", 0.7)), \
+         patch.object(equipment_gate_worker, "_reader_loop", side_effect=fake_reader), \
+         patch.object(equipment_gate_worker, "_preview_loop"), \
+         patch.object(equipment_gate_worker, "_submit_crossing"), \
+         patch.object(equipment_gate_worker, "_submit_live_state") as mock_live_state:
+
+        equipment_gate_worker._stop_event.clear()
+        thread = threading.Thread(target=equipment_gate_worker._gate_loop, args=(gate, lambda: "tok"), daemon=True)
+        thread.start()
+        time.sleep(0.15)
+        equipment_gate_worker._stop_event.set()
+        thread.join(timeout=4)
+
+    assert not thread.is_alive()
+    assert mock_live_state.called
+    _, gate_id, boxes = mock_live_state.call_args[0]
+    assert gate_id == 9
+    assert len(boxes) == 1
+    assert boxes[0]["crossed"] is False
+    assert boxes[0]["code"] == "XYZ999"
+    assert len(boxes[0]["box"]) == 4

@@ -15,30 +15,32 @@ _TOKEN_TTL_SECONDS = 600  # 10 dakika - akis baglantisi kurulduktan sonra
                           # token'in kendisi suresi dolsa bile baglanti acik kalir
 
 _lock = threading.Lock()
-_tokens: dict[str, tuple[int, float]] = {}  # token -> (camera_id, olusturulma_zamani)
+_tokens: dict[str, tuple[int | str, float]] = {}  # token -> (kaynak anahtari, olusturulma_zamani)
 
 
-def mint_token(camera_id: int) -> str:
+def mint_token(key: int | str) -> str:
+    """`key`, kameralar icin camera_id (int), kapilar icin "gate-{gate_id}"
+    (str) olabilir - akis ucu hangi kaynagi acacagini bu anahtardan bulur."""
     token = secrets.token_urlsafe(32)
     with _lock:
-        _tokens[token] = (camera_id, time.monotonic())
+        _tokens[token] = (key, time.monotonic())
         _prune_expired_locked()
     return token
 
 
-def resolve_token(token: str) -> int | None:
-    """Token gecerliyse ilgili camera_id'yi dondurur, degilse None.
+def resolve_token(token: str) -> int | str | None:
+    """Token gecerliyse ilgili kaynak anahtarini dondurur, degilse None.
     Tek kullanimlik degildir (bir <img> yeniden baglanirsa - orn. aginin
     kisa kesintisinde - ayni token'i tekrar kullanabilir)."""
     with _lock:
         entry = _tokens.get(token)
         if entry is None:
             return None
-        camera_id, created_at = entry
+        key, created_at = entry
         if time.monotonic() - created_at > _TOKEN_TTL_SECONDS:
             del _tokens[token]
             return None
-        return camera_id
+        return key
 
 
 def _prune_expired_locked() -> None:
