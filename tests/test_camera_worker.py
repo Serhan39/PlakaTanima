@@ -111,6 +111,50 @@ def test_slow_detection_does_not_stall_frame_reading():
     assert cap.read.call_count > 20
 
 
+def test_slow_detection_does_not_stall_preview_pushes():
+    # Regresyon testi: tespit (ozellikle agir bir OCR motoru - orn. EasyOCR)
+    # onceden onizlemeyle AYNI thread'de/dongude yapiliyordu; yavas bir
+    # tespit cagrisi bu yuzden onizlemeyi de bloke ediyordu. Artik ayri
+    # thread'lerde calistigi icin yavas tespit, onizleme sikligini
+    # ETKILEMEMELI.
+    camera_worker.PREVIEW_INTERVAL_SECONDS = 0.01
+    camera_worker.DETECT_INTERVAL_SECONDS = 0.05
+
+    with camera_worker._lock:
+        camera_worker._active_camera_ids.add(4)
+
+    def slow_detect(*args, **kwargs):
+        time.sleep(0.15)  # yavas bir OCR/ONNX cagrisini simule eder
+
+    with patch("app.camera_worker.cv2.VideoCapture", return_value=_fake_capture()), \
+         patch("app.camera_worker.cv2.imencode", return_value=(True, MagicMock(tobytes=lambda: b"jpeg"))), \
+         patch.object(camera_worker, "_push_preview") as mock_preview, \
+         patch.object(camera_worker, "_submit_detection", side_effect=slow_detect) as mock_detect:
+
+        thread = threading.Thread(
+            target=camera_worker._camera_loop,
+            args=({"id": 4, "name": "Test4", "rtsp_url": "rtsp://sahte4"}, lambda: "tok"),
+            daemon=True,
+        )
+        thread.start()
+        time.sleep(0.4)
+        with camera_worker._lock:
+            camera_worker._active_camera_ids.discard(4)
+        thread.join(timeout=4)
+
+    assert not thread.is_alive()
+    # 0.4sn'de PREVIEW_INTERVAL_SECONDS=0.01 ile onlarca onizleme itilmis
+    # olmali - yavas tespit cagrisi (0.15sn) bunu bloke etseydi (paylasilan
+    # eski dongude oldugu gibi) bu sayi ~2-3'te kalirdi. Sistem yukune gore
+    # zamanlama degiskenlik gosterebildigi icin gevsek ama ayirt edici bir
+    # esik kullanilir.
+    assert mock_preview.call_count > 8
+    # Yavas da olsa, tespit dongusu bir onceki cagri biter bitmez hemen
+    # yeni bir tane baslatmali (bekleme suresi eklemeden) - 0.3sn icinde
+    # ~0.15sn'lik cagrilardan en az 1-2 kez calismis olmali.
+    assert mock_detect.call_count >= 1
+
+
 def test_camera_loop_stops_immediately_when_camera_not_active():
     # Kamera hic active listesine eklenmezse dongu ilk kontrolde cikmali.
     with camera_worker._lock:

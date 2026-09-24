@@ -65,10 +65,13 @@ ilham alındığı ve lisans/AGPL riskinin nasıl yönetildiği).
   **OCR Motoru Seçimi**).
 - `app/camera_worker.py` — kamera başına RTSP'ye BİR KERE bağlanıp sürekli
   kare okuyan bağımsız süreç (API sürecinden izole, yatayda ölçeklenebilir).
-  Okuma ve gönderme ayrı thread'lerdedir (yavaş bir HTTP/OCR isteği kare
-  okumayı asla bloke etmez). Okunan kareler hem canlı önizleme önbelleğine
-  (sık, `PREVIEW_INTERVAL_SECONDS`) hem de tespite (seyrek,
-  `CAPTURE_INTERVAL_SECONDS`) gönderilir.
+  Okuma, önizleme gönderme ve tespit gönderme ÜÇ AYRI thread'dedir - yavaş
+  bir HTTP/OCR isteği (özellikle EasyOCR gibi ağır bir motor) ne kare
+  okumayı, ne önizlemeyi, ne de bir SONRAKI tespit denemesini bloke eder.
+  Okunan kareler hem canlı önizleme önbelleğine (sık, `PREVIEW_INTERVAL_
+  SECONDS`) hem de tespite (`CAPTURE_INTERVAL_SECONDS` - bir önceki tespit
+  isteği daha uzun sürerse bu değer sadece bir ALT SINIR olur, gerçek
+  sıklık asla işlenme süresinden yavaş olmaz) gönderilir.
 - Panelin "Canlı Kameralar" ızgarası, `GET /api/cameras/{id}/stream`
   üzerinden gerçek bir MJPEG (`multipart/x-mixed-replace`) video akışı
   izler — tarayıcı bunu `<img>` etiketiyle native oynatır, JS tarafında

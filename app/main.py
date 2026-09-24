@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 
+from app.config import get_settings
 from app.database import Base, engine
 from app.migrations import run_light_migrations
 from app.routers import auth, cameras, detect, equipment, logs, parking, reports, users, watchlist
@@ -15,6 +16,10 @@ from app.websocket_manager import equipment_manager, manager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     run_light_migrations(engine, Base)
+    # .env icinde ayni degiskenin (orn. OCR_ENGINE) yanlislikla iki kez
+    # tanimlanmasi (son satir sessizce kazanir) gecmiste kafa karistirdigi
+    # icin, hangi degerin FIILEN aktif oldugunu acikca loglariz.
+    print(f"[api] OCR_ENGINE={get_settings().ocr_engine}")
     task = asyncio.create_task(daily_report_loop())
     yield
     task.cancel()

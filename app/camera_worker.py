@@ -90,11 +90,12 @@ def _sender_loop(camera_id: int, latest: dict, frame_lock: threading.Lock, get_t
     """RTSP okuma dongusunden tamamen bagimsiz calisir; boylece HTTP/OCR
     gecikmesi asla kare okumayi bloke etmez ve RTSP arabellegi taze kalir.
 
-    Onizleme ve tespit icin AYRI JPEG kodlamalari kullanilir: onizleme
-    dusuk kalitede (PREVIEW_JPEG_QUALITY, varsayilan 70) - kucuk dosya =
-    daha hizli yukleme = panelde daha akici gorunum; tespit ise OCR
-    dogrulugu icin tam kalitede kalir, akiciliktan etkilenmez."""
-    last_detect = 0.0
+    SADECE onizlemeyi gonderir (dusuk kalite, PREVIEW_JPEG_QUALITY) - tespit
+    artik AYRI bir thread'de calisir (bkz. _detect_loop), cunku burada
+    birlikte yapilirsa YAVAS bir tespit cagrisi (ozellikle EasyOCR gibi
+    agir bir OCR motoru) onizlemeyi de, bir SONRAKI tespit denemesini de
+    geciktiriyordu - hizli gecen bir arac boylece DETECT_INTERVAL_SECONDS
+    ne kadar dusuk ayarlanirsa ayarlansin hic tespit edilmeden atlanabiliyordu."""
     while _is_active(camera_id):
         time.sleep(PREVIEW_INTERVAL_SECONDS)
         with frame_lock:
@@ -102,18 +103,35 @@ def _sender_loop(camera_id: int, latest: dict, frame_lock: threading.Lock, get_t
         if frame is None:
             continue
 
-        token = get_token()
-
         ok, preview_buffer = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), PREVIEW_JPEG_QUALITY])
         if ok:
-            _push_preview(camera_id, preview_buffer.tobytes(), token)
+            _push_preview(camera_id, preview_buffer.tobytes(), get_token())
 
-        now = time.monotonic()
-        if now - last_detect >= DETECT_INTERVAL_SECONDS:
-            last_detect = now
-            ok, detect_buffer = cv2.imencode(".jpg", frame)
-            if ok:
-                _submit_detection(camera_id, detect_buffer.tobytes(), token)
+
+def _detect_loop(camera_id: int, latest: dict, frame_lock: threading.Lock, get_token) -> None:
+    """Tespiti onizlemeden AYRI bir thread'de, kendi temposunda calistirir:
+    bir onceki tespit isteginin (ONNX + OCR, saniyeler surebilir) suresi
+    DETECT_INTERVAL_SECONDS'i asarsa, bir sonraki denemeyi BEKLEMEDEN hemen
+    baslatir - yani gercek tespit sikligi asla islenme suresinden daha
+    yavas olmaz (yapilandirilan deger sadece bir ALT SINIR/tavan gorevi
+    gorur, cok hizli isleyen bir sunucuda gereksiz siklikta tespiti onler)."""
+    last_detect = 0.0
+    while _is_active(camera_id):
+        elapsed = time.monotonic() - last_detect
+        if elapsed < DETECT_INTERVAL_SECONDS:
+            time.sleep(DETECT_INTERVAL_SECONDS - elapsed)
+            if not _is_active(camera_id):
+                break
+
+        with frame_lock:
+            frame = latest["frame"]
+        last_detect = time.monotonic()
+        if frame is None:
+            continue
+
+        ok, detect_buffer = cv2.imencode(".jpg", frame)
+        if ok:
+            _submit_detection(camera_id, detect_buffer.tobytes(), get_token())
 
 
 def _camera_loop(camera: dict, get_token) -> None:
@@ -125,6 +143,8 @@ def _camera_loop(camera: dict, get_token) -> None:
     frame_lock = threading.Lock()
     sender = threading.Thread(target=_sender_loop, args=(camera_id, latest, frame_lock, get_token), daemon=True)
     sender.start()
+    detector_thread = threading.Thread(target=_detect_loop, args=(camera_id, latest, frame_lock, get_token), daemon=True)
+    detector_thread.start()
 
     while _is_active(camera_id):
         ok, frame = capture.read()
@@ -140,6 +160,7 @@ def _camera_loop(camera: dict, get_token) -> None:
 
     capture.release()
     sender.join(timeout=PREVIEW_INTERVAL_SECONDS + 2)
+    detector_thread.join(timeout=DETECT_INTERVAL_SECONDS + 2)
     print(f"[worker] Izleme durduruldu: {camera['name']} (kamera artik pasif/silinmis)")
 
 
