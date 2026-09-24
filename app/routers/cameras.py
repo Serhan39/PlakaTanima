@@ -141,18 +141,17 @@ def create_camera(payload: CameraCreate, db: Session = Depends(get_db)):
 @router.put("/{camera_id}/roi", response_model=CameraRead, dependencies=[Depends(require_roles(UserRole.ADMIN))])
 def update_camera_roi(camera_id: int, payload: CameraRoiUpdate, db: Session = Depends(get_db)):
     """Genis acili kameralarda arac/plaka goruntude kucuk kalip tespit
-    motoruna kucultulunce kaybolabiliyor. Burada tanimlanan bolge
-    (normalize 0-1 koordinatlar), /api/detect/image tarafindan tespit
-    ONCESI kareyi bu bolgeye kirpip (dijital yakinlastirma) motor bu
-    kirpilmis goruntude calisir. Tum alanlar None gonderilirse bolge
-    kaldirilir (tum kare kullanilir - varsayilan davranis)."""
+    motoruna kucultulunce kaybolabiliyor, ya da capraz bir yolu basit bir
+    dikdortgen tam saramiyor olabilir. Burada tanimlanan bolge (normalize
+    0-1 koordinatli serbest cokgen), /api/detect/image tarafindan tespit
+    ONCESI kareyi bu cokgenin sinirina kirpip disindaki pikselleri karartir
+    (dijital yakinlastirma + gurultu elemesi) - motor bu islenmis goruntude
+    calisir. roi_points None/bos gonderilirse bolge kaldirilir (tum kare
+    kullanilir - varsayilan davranis)."""
     camera = db.get(Camera, camera_id)
     if not camera:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Kamera bulunamadi")
-    camera.roi_x1 = payload.roi_x1
-    camera.roi_y1 = payload.roi_y1
-    camera.roi_x2 = payload.roi_x2
-    camera.roi_y2 = payload.roi_y2
+    camera.roi_points = payload.roi_points
     db.commit()
     db.refresh(camera)
     return camera

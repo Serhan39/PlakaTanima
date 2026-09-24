@@ -129,16 +129,18 @@
         <h4 id="camera-roi-editor-title"></h4>
         <p class="hint">
           Genis acili kameralarda uzaktaki/kucuk plakalar tespit motoruna
-          kucultulunce kaybolabiliyor. Kameradan alinan ornek goruntu
-          uzerinde, araclarin gectigi/plakanin gorunecegi bolgenin
-          <strong>sol-ust</strong> ve <strong>sag-alt</strong> koselerine
-          tiklayin (2 nokta) - tespit sadece bu bolgede (dijital
-          yakinlastirilmis) yapilacak. Iki nokta tamamlaninca otomatik
-          olarak yeniden baslar.
+          kucultulunce kaybolabiliyor; capraz/duzensiz bir yol (orn. garaj
+          girisi) ise basit bir dikdortgenle tam sarilamayabiliyor. Bu
+          yuzden bolgeyi <strong>serbest bir sekil (cokgen)</strong> olarak
+          ciziyorsunuz: kameradan alinan ornek goruntu uzerinde, aracin
+          gectigi/plakanin gorunecegi alanin kose noktalarina istediginiz
+          sirada, istediginiz kadar tiklayin (en az 3 nokta) - tespit
+          sadece bu sekle giren alanda (disi karartilip) yapilacak.
         </p>
         <canvas id="camera-roi-canvas" width="640" height="360"></canvas>
         <div class="inline-form">
           <button id="camera-roi-refresh-btn" class="ghost-btn" type="button">Goruntuyu Yenile</button>
+          <button id="camera-roi-undo-btn" class="ghost-btn" type="button">Son Noktayi Geri Al</button>
           <button id="camera-roi-reset-btn" class="ghost-btn" type="button">Sifirla</button>
           <button id="camera-roi-clear-btn" class="ghost-btn" type="button">Bolgeyi Kaldir (Tum Kareyi Kullan)</button>
           <button id="camera-roi-save-btn" type="button">Kaydet</button>

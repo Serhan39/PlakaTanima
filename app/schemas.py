@@ -54,17 +54,23 @@ class CameraRead(BaseModel):
     relay_pulse_seconds: float
     open_categories: str
     direction: CameraDirection
-    roi_x1: float | None = None
-    roi_y1: float | None = None
-    roi_x2: float | None = None
-    roi_y2: float | None = None
+    roi_points: list[list[float]] | None = None
 
 
 class CameraRoiUpdate(BaseModel):
-    roi_x1: float | None = None
-    roi_y1: float | None = None
-    roi_x2: float | None = None
-    roi_y2: float | None = None
+    roi_points: list[list[float]] | None = None
+
+    @field_validator("roi_points")
+    @classmethod
+    def _validate_points(cls, value: list[list[float]] | None) -> list[list[float]] | None:
+        if value is None or len(value) == 0:
+            return None
+        if len(value) < 3:
+            raise ValueError("Bir bolge (cokgen) en az 3 nokta gerektirir")
+        for point in value:
+            if len(point) != 2:
+                raise ValueError("Her nokta [x, y] seklinde iki deger icermeli")
+        return value
 
 
 class RelayTestResult(BaseModel):

@@ -45,23 +45,34 @@ def _maybe_trigger_relay(camera_id: int | None, category: WatchlistCategory | No
 
 
 def _apply_roi(frame: np.ndarray, camera: Camera | None) -> tuple[np.ndarray, int, int]:
-    """Kamerada bir tespit bolgesi (ROI) tanimliysa, kareyi o bolgeye kirpar
-    (dijital yakinlastirma) - genis acili bir kamerada uzaktaki/kucuk bir
-    plaka, tespit motorunun 640x640'a kucultmesiyle kaybolabiliyor; sadece
-    ilgili bolgeyi tespit motoruna vermek efektif cozunurlugu artirir.
-    Kirpilmis karedeki kutu koordinatlarini orijinal karedeki gercek
-    konumuna geri donusturebilmek icin (x_offset, y_offset) de doner."""
-    if camera is None or None in (camera.roi_x1, camera.roi_y1, camera.roi_x2, camera.roi_y2):
+    """Kamerada bir tespit bolgesi (ROI) tanimliysa, kareyi o cokgenin
+    dikdortgen sinirina kirpar (dijital yakinlastirma) VE cokgenin DISINDA
+    kalan pikselleri karartir - genis acili bir kamerada uzaktaki/kucuk bir
+    plaka, tespit motorunun 640x640'a kucultmesiyle kaybolabiliyor; capraz
+    bir yol (orn. garaj girisi) ise basit bir dikdortgenle tam sarilamayip
+    duvar/tabela gibi alakasiz alanlari da icine alabiliyor - serbest cokgen
+    ikisini de cozer. Kirpilmis karedeki kutu koordinatlarini orijinal
+    karedeki gercek konumuna geri donusturebilmek icin (x_offset, y_offset)
+    de doner."""
+    if camera is None or not camera.roi_points or len(camera.roi_points) < 3:
         return frame, 0, 0
 
     h, w = frame.shape[:2]
-    x1 = max(0, min(w, int(camera.roi_x1 * w)))
-    y1 = max(0, min(h, int(camera.roi_y1 * h)))
-    x2 = max(0, min(w, int(camera.roi_x2 * w)))
-    y2 = max(0, min(h, int(camera.roi_y2 * h)))
+    points = np.array(
+        [[max(0, min(w, int(px * w))), max(0, min(h, int(py * h)))] for px, py in camera.roi_points],
+        dtype=np.int32,
+    )
+    x1, y1 = int(points[:, 0].min()), int(points[:, 1].min())
+    x2, y2 = int(points[:, 0].max()), int(points[:, 1].max())
     if x2 <= x1 or y2 <= y1:
         return frame, 0, 0
-    return frame[y1:y2, x1:x2], x1, y1
+
+    mask = np.zeros((h, w), dtype=np.uint8)
+    cv2.fillPoly(mask, [points], 255)
+
+    cropped = frame[y1:y2, x1:x2].copy()
+    cropped[mask[y1:y2, x1:x2] == 0] = 0
+    return cropped, x1, y1
 
 
 def _update_parking_state(db: Session, camera: Camera | None, plate: str, plate_hash: str) -> None:

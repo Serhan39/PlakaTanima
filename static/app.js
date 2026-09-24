@@ -295,7 +295,7 @@ async function loadCameras() {
   const tbody = document.querySelector("#camera-table tbody");
   tbody.innerHTML = cameras
     .map((c) => {
-      const hasRoi = c.roi_x1 !== null && c.roi_x1 !== undefined;
+      const hasRoi = Array.isArray(c.roi_points) && c.roi_points.length >= 3;
       return `<tr>
         <td>${c.name}</td>
         <td>${c.location || "-"}</td>
@@ -330,7 +330,7 @@ async function deleteCamera(id) {
   loadLiveCameraGrid();
 }
 
-let cameraRoiState = null; // { cameraId, img, points: [{x,y}] } (en fazla 2 nokta: sol-ust, sag-alt)
+let cameraRoiState = null; // { cameraId, img, points: [{x,y}] } - serbest cokgen, istenen sayida nokta
 
 function openCameraRoiEditor(cameraId) {
   const camera = currentCamerasCache.find((c) => c.id === cameraId);
@@ -363,11 +363,8 @@ async function loadCameraRoiPreview() {
 
       const camera = currentCamerasCache.find((c) => c.id === cameraRoiState.cameraId);
       cameraRoiState.points =
-        camera && camera.roi_x1 !== null && camera.roi_x1 !== undefined
-          ? [
-              { x: camera.roi_x1 * img.width, y: camera.roi_y1 * img.height },
-              { x: camera.roi_x2 * img.width, y: camera.roi_y2 * img.height },
-            ]
+        camera && Array.isArray(camera.roi_points) && camera.roi_points.length >= 3
+          ? camera.roi_points.map(([px, py]) => ({ x: px * img.width, y: py * img.height }))
           : [];
       redrawCameraRoiEditor();
     };
@@ -384,20 +381,22 @@ function redrawCameraRoiEditor() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(cameraRoiState.img, 0, 0, canvas.width, canvas.height);
 
-  const [p1, p2] = cameraRoiState.points;
-  if (p1 && p2) {
-    const x = Math.min(p1.x, p2.x);
-    const y = Math.min(p1.y, p2.y);
-    const w = Math.abs(p2.x - p1.x);
-    const h = Math.abs(p2.y - p1.y);
+  const points = cameraRoiState.points;
+  if (points.length >= 2) {
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+    if (points.length >= 3) ctx.closePath();
     ctx.strokeStyle = "#2563eb";
     ctx.lineWidth = 3;
-    ctx.strokeRect(x, y, w, h);
-    ctx.fillStyle = "rgba(37, 99, 235, 0.15)";
-    ctx.fillRect(x, y, w, h);
+    ctx.stroke();
+    if (points.length >= 3) {
+      ctx.fillStyle = "rgba(37, 99, 235, 0.15)";
+      ctx.fill();
+    }
   }
-  cameraRoiState.points.forEach((p) => {
-    ctx.fillStyle = "#2563eb";
+  points.forEach((p, i) => {
+    ctx.fillStyle = i === 0 && points.length >= 3 ? "#16a34a" : "#2563eb"; // ilk nokta yesil (kapatma hedefi)
     ctx.beginPath();
     ctx.arc(p.x, p.y, 7, 0, Math.PI * 2);
     ctx.fill();
@@ -414,14 +413,17 @@ function setupCameraRoiEditor() {
     const x = (event.clientX - rect.left) * scaleX;
     const y = (event.clientY - rect.top) * scaleY;
 
-    if (cameraRoiState.points.length >= 2) {
-      cameraRoiState.points = []; // iki nokta tamamlandiysa yeniden basla
-    }
     cameraRoiState.points.push({ x, y });
     redrawCameraRoiEditor();
   });
 
   document.getElementById("camera-roi-refresh-btn").addEventListener("click", () => loadCameraRoiPreview());
+
+  document.getElementById("camera-roi-undo-btn").addEventListener("click", () => {
+    if (!cameraRoiState) return;
+    cameraRoiState.points.pop();
+    redrawCameraRoiEditor();
+  });
 
   document.getElementById("camera-roi-reset-btn").addEventListener("click", () => {
     if (!cameraRoiState) return;
@@ -440,7 +442,7 @@ function setupCameraRoiEditor() {
       await apiFetch(`/api/cameras/${cameraRoiState.cameraId}/roi`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ roi_x1: null, roi_y1: null, roi_x2: null, roi_y2: null }),
+        body: JSON.stringify({ roi_points: null }),
       });
       document.getElementById("camera-roi-editor").style.display = "none";
       cameraRoiState = null;
@@ -451,21 +453,17 @@ function setupCameraRoiEditor() {
   });
 
   document.getElementById("camera-roi-save-btn").addEventListener("click", async () => {
-    if (!cameraRoiState || cameraRoiState.points.length !== 2) {
-      alert("Bolgenin sol-ust ve sag-alt koselerine tiklayin (toplam 2 tiklama)");
+    if (!cameraRoiState || cameraRoiState.points.length < 3) {
+      alert("Bolgeyi olusturmak icin en az 3 noktaya tiklayin (istediginiz sekilde, istediginiz kadar nokta ekleyebilirsiniz)");
       return;
     }
     const canvas = document.getElementById("camera-roi-canvas");
-    const [p1, p2] = cameraRoiState.points;
-    const x1 = Math.min(p1.x, p2.x) / canvas.width;
-    const y1 = Math.min(p1.y, p2.y) / canvas.height;
-    const x2 = Math.max(p1.x, p2.x) / canvas.width;
-    const y2 = Math.max(p1.y, p2.y) / canvas.height;
+    const roiPoints = cameraRoiState.points.map((p) => [p.x / canvas.width, p.y / canvas.height]);
     try {
       await apiFetch(`/api/cameras/${cameraRoiState.cameraId}/roi`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ roi_x1: x1, roi_y1: y1, roi_x2: x2, roi_y2: y2 }),
+        body: JSON.stringify({ roi_points: roiPoints }),
       });
       alert("Tespit bolgesi kaydedildi. Bir sonraki tespitten itibaren gecerli olacak (worker'i yeniden baslatmaya gerek yok).");
       document.getElementById("camera-roi-editor").style.display = "none";

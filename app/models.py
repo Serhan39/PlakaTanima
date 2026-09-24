@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, String, TypeDecorator
+from sqlalchemy import JSON, DateTime, Enum, Float, ForeignKey, String, TypeDecorator
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -91,16 +91,18 @@ class Camera(Base):
     open_categories: Mapped[str] = mapped_column(String(255), default="allowed,staff")
     direction: Mapped[CameraDirection] = mapped_column(Enum(CameraDirection), default=CameraDirection.NONE)
 
-    # Tespit bolgesi (ROI, normalize 0-1 koordinatlar): genis acili kameralarda
-    # arac/plaka goruntude kucuk kalip tespit motoruna (640x640) kucultulunce
-    # kaybolabiliyor. Tanimliysa, tespit ONCESI kare bu bolgeye kirpilip
-    # (dijital yakinlastirma) tespit motoruna oyle verilir - boylece ayni
-    # kamera degistirilmeden efektif cozunurluk artar. Bos ise (None) tum
-    # kare kullanilir (eski davranis, geriye donuk uyumlu).
-    roi_x1: Mapped[float | None] = mapped_column(Float, nullable=True)
-    roi_y1: Mapped[float | None] = mapped_column(Float, nullable=True)
-    roi_x2: Mapped[float | None] = mapped_column(Float, nullable=True)
-    roi_y2: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Tespit bolgesi (ROI): genis acili kameralarda arac/plaka goruntude
+    # kucuk kalip tespit motoruna (640x640) kucultulunce kaybolabiliyor, ya
+    # da capraz/duzensiz bir yolu (garaj girisi gibi) basit bir dikdortgen
+    # tam saramayip duvar/tabela gibi alakasiz alanlari da iciyor. Bu yuzden
+    # ROI serbest bir COKGEN olarak saklanir: normalize (0-1) [x,y]
+    # noktalarinin listesi (en az 3 nokta), orn. [[0.1,0.2],[0.6,0.15],...].
+    # Tanimliysa, tespit ONCESI kare bu cokgenin dikdortgen sinirina kirpilir
+    # VE cokgenin DISINDA kalan pikseller karartilir (bkz. app/routers/
+    # detect.py::_apply_roi) - boylece capraz bir alanin bile disindaki
+    # gurultu (duvar yazisi vb.) tespit motoruna hic gosterilmez. Bos ise
+    # (None) tum kare kullanilir (eski davranis, geriye donuk uyumlu).
+    roi_points: Mapped[list[list[float]] | None] = mapped_column(JSON, nullable=True)
 
 
 class WatchlistEntry(Base):
